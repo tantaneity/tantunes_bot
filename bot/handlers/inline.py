@@ -15,7 +15,7 @@ from dishka.integrations.aiogram import FromDishka, inject
 from bot.emoji import DOWNLOAD_EMOJI_ID, SOURCE_LABEL
 from bot.keyboards import track_keyboard
 from bot.services.cache import CacheService
-from bot.services.sender import audio_caption, display_track_url, processing_message
+from bot.services.sender import build_audio_caption, display_track_url, processing_message
 from bot.services.search import SearchService
 from bot.services.tracker import TrackingService
 
@@ -80,13 +80,14 @@ async def handle_inline_query(
         src_label = SOURCE_LABEL.get(track.source, track.source.upper())
 
         if file_id:
-            cap_text = audio_caption(track.source, track.performer, track.title)
+            cap = build_audio_caption(track.source, track.performer, track.title)
+            cap_kwargs = cap.as_kwargs()
             results.append(
                 InlineQueryResultCachedAudio(
                     id=f"{track.source}:{track.video_id}",
                     audio_file_id=file_id,
-                    caption=cap_text,
-                    parse_mode="HTML",
+                    caption=cap_kwargs["text"],
+                    caption_entities=cap_kwargs["entities"],
                     reply_markup=track_keyboard(display_track_url(track.source, track.video_id, track.url)),
                 )
             )

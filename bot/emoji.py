@@ -14,6 +14,21 @@ SOURCE_EMOJI = {
     "youtube": _e("5222297223932419849", "▶"),
 }
 
+MUSIC_EMOJI_ID = "5352857362078117231"
+MUSIC_FALLBACK = "🎵"
+
+SOURCE_EMOJI_IDS: dict[str, str] = {
+    "soundcloud": "5226660562812818287",
+    "spotify": "5330338002436633953",
+    "youtube": "5222297223932419849",
+}
+
+SOURCE_EMOJI_FALLBACKS: dict[str, str] = {
+    "soundcloud": "☁",
+    "spotify": "🟢",
+    "youtube": "▶",
+}
+
 SOURCE_LABEL = {
     "soundcloud": "SC",
     "spotify": "SP",

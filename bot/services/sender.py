@@ -15,7 +15,19 @@ from aiogram.types import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, MUSIC, PROCESSING, SOURCE_EMOJI
+from aiogram.utils.formatting import Bold, CustomEmoji, Text, TextLink
+
+from bot.emoji import (
+    DOWNLOAD_EMOJI_ID,
+    ERROR,
+    MUSIC,
+    MUSIC_EMOJI_ID,
+    MUSIC_FALLBACK,
+    PROCESSING,
+    SOURCE_EMOJI,
+    SOURCE_EMOJI_FALLBACKS,
+    SOURCE_EMOJI_IDS,
+)
 from bot.keyboards import track_keyboard
 from bot.repositories.stats import DownloadRepository, SearchRepository
 from bot.repositories.user import UserRepository
@@ -33,6 +45,21 @@ def thumbnail_file(url: str | None):
 def audio_caption(source: str, performer: str, title: str) -> str:
     src = SOURCE_EMOJI.get(source, source.upper())
     return f'{MUSIC} <b><a href="https://t.me/instantaneity">{performer} — {title}</a></b> · {src}'
+
+
+def build_audio_caption(source: str, performer: str, title: str) -> Text:
+    src_id = SOURCE_EMOJI_IDS.get(source)
+    src_fallback = SOURCE_EMOJI_FALLBACKS.get(source, source.upper())
+    src_node: CustomEmoji | str = (
+        CustomEmoji(src_fallback, custom_emoji_id=src_id) if src_id else src_fallback
+    )
+    return Text(
+        CustomEmoji(MUSIC_FALLBACK, custom_emoji_id=MUSIC_EMOJI_ID),
+        " ",
+        TextLink(Bold(f"{performer} — {title}"), url="https://t.me/instantaneity"),
+        " · ",
+        src_node,
+    )
 
 
 def processing_message(source: str | None = None) -> str:
