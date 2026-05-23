@@ -3,15 +3,16 @@ import logging
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ChosenInlineResult
+from aiogram.types import ChosenInlineResult, InputMediaAudio
 from dishka.integrations.aiogram import FromDishka, inject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.services.cache import CacheService
 from bot.services.downloader import DownloaderService
-from bot.services.sender import deliver_audio
+from bot.services.sender import audio_caption, deliver_audio, display_track_url, thumbnail_file
 from bot.services.tracker import TrackingService
+from bot.keyboards import track_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -43,7 +44,24 @@ async def handle_chosen_result(
         meta = await cache.get_track_meta(source, video_id) or {}
         title = meta.get("title", "Unknown")
         performer = meta.get("performer", "Unknown")
+        url = meta.get("url", "")
         await tracking.record_download(user_id, source, performer, title)
+        if inline_message_id:
+            try:
+                await bot.edit_message_media(
+                    media=InputMediaAudio(
+                        media=file_id,
+                        title=title,
+                        performer=performer,
+                        thumbnail=thumbnail_file(meta.get("thumbnail")),
+                        caption=audio_caption(source, performer, title),
+                        parse_mode="HTML",
+                    ),
+                    inline_message_id=inline_message_id,
+                    reply_markup=track_keyboard(display_track_url(source, video_id, url)),
+                )
+            except TelegramBadRequest:
+                pass
         return
 
 
