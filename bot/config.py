@@ -11,10 +11,15 @@ class Settings(BaseSettings):
     ADMIN_IDS: str = ""
     SPOTIFY_CLIENT_ID: str = ""
     SPOTIFY_CLIENT_SECRET: str = ""
+    DEEZER_ARL: str = ""
 
     @property
     def spotify_enabled(self) -> bool:
         return bool(self.SPOTIFY_CLIENT_ID and self.SPOTIFY_CLIENT_SECRET)
+
+    @property
+    def deezer_enabled(self) -> bool:
+        return bool(self.DEEZER_ARL)
 
     @property
     def admin_ids(self) -> list[int]:

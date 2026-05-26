@@ -8,6 +8,7 @@ from bot.core.db import AsyncSessionFactory
 from bot.repositories.stats import DownloadRepository, SearchRepository
 from bot.repositories.user import UserRepository
 from bot.services.cache import CacheService
+from bot.services.deezer import DeezerDownloader
 from bot.services.downloader import DownloaderService
 from bot.services.search import SearchService, YtDlpProvider
 from bot.services.stats import StatsService
@@ -27,8 +28,14 @@ class AppProvider(Provider):
         return CacheService(s.REDIS_URL)
 
     @provide
-    def get_downloader(self) -> DownloaderService:
-        return DownloaderService()
+    def get_deezer(self, s: Settings) -> DeezerDownloader | None:
+        if s.deezer_enabled:
+            return DeezerDownloader(s.DEEZER_ARL)
+        return None
+
+    @provide
+    def get_downloader(self, deezer: DeezerDownloader | None) -> DownloaderService:
+        return DownloaderService(deezer)
 
     @provide
     def get_session_factory(self) -> async_sessionmaker[AsyncSession]:

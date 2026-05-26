@@ -150,6 +150,10 @@ async def deliver_audio(
             expected_duration=expected_duration,
             expected_title=title,
             expected_artist=performer,
+            title=title,
+            artist=performer,
+            isrc=meta.get("isrc", ""),
+            use_deezer=source == "spotify",
         )
 
         with open(mp3_path, "rb") as f:

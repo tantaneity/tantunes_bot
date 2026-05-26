@@ -8,8 +8,11 @@ import imageio_ffmpeg
 import yt_dlp
 from rapidfuzz import fuzz
 
+from bot.services.deezer import DeezerDownloader
+
 _FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 _SEARCH_PREFIX_RE = re.compile(r"^(ytmsearch|ytsearch|scsearch)\d*:")
+_DEEZER_TIMEOUT = 60.0
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,9 @@ def _score_entry(
 
 
 class DownloaderService:
+    def __init__(self, deezer: DeezerDownloader | None = None) -> None:
+        self._deezer = deezer
+
     def _resolve_search_url(
         self,
         url: str,
@@ -145,7 +151,30 @@ class DownloaderService:
         expected_duration: int = 0,
         expected_title: str = "",
         expected_artist: str = "",
+        title: str = "",
+        artist: str = "",
+        isrc: str = "",
+        use_deezer: bool = False,
     ) -> str:
+        if use_deezer and self._deezer and (title or artist):
+            try:
+                mp3_path = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._deezer.download,
+                        title or expected_title,
+                        artist or expected_artist,
+                        output_dir,
+                        isrc,
+                    ),
+                    timeout=_DEEZER_TIMEOUT,
+                )
+                logger.info("Deezer download succeeded for %r — %r", artist, title)
+                return mp3_path
+            except asyncio.TimeoutError:
+                logger.warning("Deezer timed out after %.0fs for %r — %r", _DEEZER_TIMEOUT, artist, title)
+            except Exception:
+                logger.warning("Deezer failed for %r — %r, falling back to YouTube", artist, title, exc_info=True)
+
         return await asyncio.to_thread(
             self._download_sync, url, output_dir,
             on_progress, expected_duration, expected_title, expected_artist,
