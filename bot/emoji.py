@@ -1,28 +1,32 @@
-_ZW = "⁠"
+def _e(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
-def _e(emoji_id: str) -> str:
-    return f'<tg-emoji emoji-id="{emoji_id}">{_ZW}</tg-emoji>'
-
-
-MUSIC = _e("5352857362078117231")
-CLOCK = _e("5350462668702496711")
-DOWNLOAD = _e("5350374905340770766")
-PROCESSING = _e("5353025909479715412")
-ERROR = _e("5350561938281607564")
+MUSIC = _e("5352857362078117231", "🎵")
+CLOCK = _e("5350462668702496711", "⏱")
+DOWNLOAD = _e("5350374905340770766", "⬇")
+PROCESSING = _e("5353025909479715412", "⏳")
+ERROR = _e("5350561938281607564", "❌")
 
 SOURCE_EMOJI = {
-    "soundcloud": _e("5226660562812818287"),
-    "spotify": _e("5330338002436633953"),
-    "youtube": _e("5222297223932419849"),
+    "soundcloud": _e("5226660562812818287", "☁"),
+    "spotify": _e("5330338002436633953", "🟢"),
+    "youtube": _e("5222297223932419849", "▶"),
 }
 
 MUSIC_EMOJI_ID = "5352857362078117231"
+MUSIC_FALLBACK = "🎵"
 
 SOURCE_EMOJI_IDS: dict[str, str] = {
     "soundcloud": "5226660562812818287",
     "spotify": "5330338002436633953",
     "youtube": "5222297223932419849",
+}
+
+SOURCE_EMOJI_FALLBACKS: dict[str, str] = {
+    "soundcloud": "☁",
+    "spotify": "🟢",
+    "youtube": "▶",
 }
 
 SOURCE_LABEL = {

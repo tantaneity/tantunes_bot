@@ -20,8 +20,10 @@ from bot.emoji import (
     DOWNLOAD_EMOJI_ID,
     ERROR,
     MUSIC_EMOJI_ID,
+    MUSIC_FALLBACK,
     PROCESSING,
     SOURCE_EMOJI,
+    SOURCE_EMOJI_FALLBACKS,
     SOURCE_EMOJI_IDS,
     SOURCE_LABEL,
 )
@@ -39,15 +41,13 @@ def thumbnail_file(url: str | None):
     return URLInputFile(url, filename="thumb.jpg") if url else None
 
 
-_ZW = "⁠"
-
-
 def build_caption_html(source: str, performer: str, title: str) -> str:
     src_id = SOURCE_EMOJI_IDS.get(source)
-    music_tag = f'<tg-emoji emoji-id="{MUSIC_EMOJI_ID}">{_ZW}</tg-emoji>'
+    src_fallback = SOURCE_EMOJI_FALLBACKS.get(source, source.upper())
+    music_tag = f'<tg-emoji emoji-id="{MUSIC_EMOJI_ID}">{MUSIC_FALLBACK}</tg-emoji>'
     src_tag = (
-        f'<tg-emoji emoji-id="{src_id}">{_ZW}</tg-emoji>'
-        if src_id else SOURCE_LABEL.get(source, source.upper())
+        f'<tg-emoji emoji-id="{src_id}">{src_fallback}</tg-emoji>'
+        if src_id else src_fallback
     )
     return (
         f'{music_tag} '
