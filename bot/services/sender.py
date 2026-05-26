@@ -22,7 +22,6 @@ from bot.emoji import (
     MUSIC_EMOJI_ID,
     MUSIC_FALLBACK,
     PROCESSING,
-    SOURCE_EMOJI,
     SOURCE_EMOJI_FALLBACKS,
     SOURCE_EMOJI_IDS,
     SOURCE_LABEL,
@@ -56,10 +55,8 @@ def build_caption_html(source: str, performer: str, title: str) -> str:
     )
 
 
-def processing_message(source: str | None = None) -> str:
-    src = SOURCE_EMOJI.get(source, "") if source else ""
-    src_str = f" · {src}" if src else ""
-    return f"{PROCESSING} Downloading...{src_str}"
+def processing_message(_source: str | None = None) -> str:
+    return f"{PROCESSING} Downloading..."
 
 
 def display_track_url(source: str, video_id: str, download_url: str | None) -> str | None:
