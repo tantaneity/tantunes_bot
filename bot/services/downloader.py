@@ -166,6 +166,7 @@ class DownloaderService:
                         output_dir,
                         isrc,
                         expected_duration,
+                        on_progress,
                     ),
                     timeout=_DEEZER_TIMEOUT,
                 )

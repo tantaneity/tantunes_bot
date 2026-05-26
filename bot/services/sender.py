@@ -22,9 +22,9 @@ from bot.emoji import (
     MUSIC_EMOJI_ID,
     MUSIC_FALLBACK,
     PROCESSING,
-    SOURCE_EMOJI,
     SOURCE_EMOJI_FALLBACKS,
     SOURCE_EMOJI_IDS,
+    SOURCE_LABEL,
 )
 from bot.keyboards import track_keyboard
 from bot.repositories.stats import DownloadRepository, SearchRepository
@@ -56,8 +56,8 @@ def build_caption_html(source: str, performer: str, title: str) -> str:
 
 
 def processing_message(source: str | None = None) -> str:
-    src = SOURCE_EMOJI.get(source, "") if source else ""
-    src_str = f" · {src}" if src else ""
+    src_label = SOURCE_LABEL.get(source, "") if source else ""
+    src_str = f" · {src_label}" if src_label else ""
     return f"{PROCESSING} Downloading...{src_str}"
 
 

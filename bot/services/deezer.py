@@ -1,6 +1,7 @@
 import logging
 import re
 import subprocess
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
@@ -93,10 +94,17 @@ class DeezerDownloader:
         output_dir: str,
         isrc: str = "",
         expected_duration: int = 0,
+        on_progress: "Callable[[int], None] | None" = None,
     ) -> str:
+        if on_progress:
+            on_progress(5)
+
         deezer_url = self._find_deezer_url(title, artist, isrc)
         if not deezer_url:
             raise LookupError(f"Track not found on Deezer: {artist} — {title}")
+
+        if on_progress:
+            on_progress(20)
 
         dz = self._client()
         settings = deepcopy(_DEEMIX_SETTINGS)
@@ -104,6 +112,9 @@ class DeezerDownloader:
 
         download_object = generateDownloadObject(dz, deezer_url, TrackFormats.MP3_320)
         Downloader(dz, download_object, settings).start()
+
+        if on_progress:
+            on_progress(80)
 
         out = Path(output_dir)
         audio_file: Path | None = None
@@ -128,5 +139,8 @@ class DeezerDownloader:
                     f"full track ({expected_duration}s) for {artist} — {title}"
                 )
             logger.info("Deezer: duration OK (%.0fs) for %s", actual, audio_file.name)
+
+        if on_progress:
+            on_progress(95)
 
         return str(audio_file)
