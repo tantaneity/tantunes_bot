@@ -165,6 +165,7 @@ class DownloaderService:
                         artist or expected_artist,
                         output_dir,
                         isrc,
+                        expected_duration,
                     ),
                     timeout=_DEEZER_TIMEOUT,
                 )

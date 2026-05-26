@@ -87,7 +87,7 @@ async def handle_inline_query(
                     id=f"{track.source}:{track.video_id}",
                     audio_file_id=file_id,
                     caption=cap_kwargs["text"],
-                    caption_entities=cap_kwargs["entities"],
+                    caption_entities=cap_kwargs.get("entities"),
                     reply_markup=track_keyboard(display_track_url(track.source, track.video_id, track.url)),
                 )
             )

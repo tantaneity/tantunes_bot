@@ -1,6 +1,6 @@
 import logging
+import re
 import subprocess
-import tempfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -62,6 +62,20 @@ class DeezerDownloader:
 
         return None
 
+    def _get_audio_duration(self, path: Path) -> float:
+        result = subprocess.run(
+            [_FFMPEG_PATH, "-i", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", result.stderr)
+        if not match:
+            return 0.0
+        h, m, s = match.groups()
+        return int(h) * 3600 + int(m) * 60 + float(s)
+
     def _to_mp3(self, source: Path, output_dir: str) -> str:
         mp3_path = Path(output_dir) / source.with_suffix(".mp3").name
         subprocess.run(
@@ -72,7 +86,14 @@ class DeezerDownloader:
         source.unlink(missing_ok=True)
         return str(mp3_path)
 
-    def download(self, title: str, artist: str, output_dir: str, isrc: str = "") -> str:
+    def download(
+        self,
+        title: str,
+        artist: str,
+        output_dir: str,
+        isrc: str = "",
+        expected_duration: int = 0,
+    ) -> str:
         deezer_url = self._find_deezer_url(title, artist, isrc)
         if not deezer_url:
             raise LookupError(f"Track not found on Deezer: {artist} — {title}")
@@ -85,14 +106,27 @@ class DeezerDownloader:
         Downloader(dz, download_object, settings).start()
 
         out = Path(output_dir)
+        audio_file: Path | None = None
 
         mp3_files = list(out.glob("*.mp3"))
         if mp3_files:
-            return str(mp3_files[0])
+            audio_file = mp3_files[0]
+        else:
+            flac_files = list(out.glob("*.flac"))
+            if flac_files:
+                logger.info("Deezer: converting FLAC -> MP3 for %s", flac_files[0].name)
+                audio_file = Path(self._to_mp3(flac_files[0], output_dir))
 
-        flac_files = list(out.glob("*.flac"))
-        if flac_files:
-            logger.info("Deezer: converting FLAC -> MP3 for %s", flac_files[0].name)
-            return self._to_mp3(flac_files[0], output_dir)
+        if audio_file is None:
+            raise FileNotFoundError(f"No audio file after Deezer download for {artist} — {title}")
 
-        raise FileNotFoundError(f"No audio file after Deezer download for {artist} — {title}")
+        if expected_duration > 60:
+            actual = self._get_audio_duration(audio_file)
+            if 0 < actual < 60:
+                raise ValueError(
+                    f"Deezer returned 30s preview ({actual:.0f}s) instead of "
+                    f"full track ({expected_duration}s) for {artist} — {title}"
+                )
+            logger.info("Deezer: duration OK (%.0fs) for %s", actual, audio_file.name)
+
+        return str(audio_file)
