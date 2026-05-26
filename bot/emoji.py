@@ -1,4 +1,4 @@
-_ZW = "⁠"  # word joiner — invisible fallback inside <tg-emoji>
+_ZW = "⁠"
 
 
 def _e(emoji_id: str) -> str:

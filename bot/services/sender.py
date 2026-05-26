@@ -21,6 +21,7 @@ from bot.emoji import (
     ERROR,
     MUSIC_EMOJI_ID,
     PROCESSING,
+    SOURCE_EMOJI,
     SOURCE_EMOJI_IDS,
     SOURCE_LABEL,
 )
@@ -38,7 +39,7 @@ def thumbnail_file(url: str | None):
     return URLInputFile(url, filename="thumb.jpg") if url else None
 
 
-_ZW = "⁠"  # word joiner — no fallback visible when custom emoji doesn't render
+_ZW = "⁠"
 
 
 def build_caption_html(source: str, performer: str, title: str) -> str:
@@ -56,8 +57,8 @@ def build_caption_html(source: str, performer: str, title: str) -> str:
 
 
 def processing_message(source: str | None = None) -> str:
-    src_label = SOURCE_LABEL.get(source, "") if source else ""
-    src_str = f" · {src_label}" if src_label else ""
+    src = SOURCE_EMOJI.get(source, "") if source else ""
+    src_str = f" · {src}" if src else ""
     return f"{PROCESSING} Downloading...{src_str}"
 
 
