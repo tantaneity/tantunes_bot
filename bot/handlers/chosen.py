@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.services.cache import CacheService
 from bot.services.downloader import DownloaderService
-from bot.services.sender import audio_caption, deliver_audio, display_track_url, thumbnail_file
+from bot.services.sender import build_audio_caption, deliver_audio, display_track_url, thumbnail_file
 from bot.services.tracker import TrackingService
 from bot.keyboards import track_keyboard
 
@@ -48,14 +48,16 @@ async def handle_chosen_result(
         await tracking.record_download(user_id, source, performer, title)
         if inline_message_id:
             try:
+                cap = build_audio_caption(source, performer, title)
+                cap_kwargs = cap.as_kwargs()
                 await bot.edit_message_media(
                     media=InputMediaAudio(
                         media=file_id,
                         title=title,
                         performer=performer,
                         thumbnail=thumbnail_file(meta.get("thumbnail")),
-                        caption=audio_caption(source, performer, title),
-                        parse_mode="HTML",
+                        caption=cap_kwargs["text"],
+                        caption_entities=cap_kwargs.get("entities"),
                     ),
                     inline_message_id=inline_message_id,
                     reply_markup=track_keyboard(display_track_url(source, video_id, url)),
