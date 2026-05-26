@@ -3,19 +3,19 @@ import logging
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, InputMediaAudio
+from aiogram.types import CallbackQuery
 from dishka.integrations.aiogram import FromDishka, inject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
-from bot.keyboards import track_keyboard
 from bot.services.cache import CacheService
 from bot.services.downloader import DownloaderService
 from bot.services.sender import (
-    audio_caption,
     deliver_audio,
     display_track_url,
+    edit_inline_audio,
     processing_message,
+    send_chat_audio,
     thumbnail_file,
 )
 from bot.services.tracker import TrackingService
@@ -59,26 +59,29 @@ async def handle_download_callback(
         thumb = thumbnail_file(meta.get("thumbnail"))
         await tracking.record_download(user_id, source, performer, title)
 
-        caption = audio_caption(source, performer, title)
-        reply_markup = track_keyboard(display_track_url(source, video_id, url))
-
         if inline_message_id:
-            try:
-                await bot.edit_message_media(
-                    media=InputMediaAudio(
-                        media=file_id, title=title, performer=performer, thumbnail=thumb,
-                        caption=caption, parse_mode="HTML",
-                    ),
-                    inline_message_id=inline_message_id,
-                    reply_markup=reply_markup,
-                )
-            except TelegramBadRequest:
-                pass
+            await edit_inline_audio(
+                bot,
+                inline_message_id=inline_message_id,
+                file_id=file_id,
+                title=title,
+                performer=performer,
+                source=source,
+                thumbnail=thumb,
+                video_id=video_id,
+                url=url,
+            )
         else:
-            await bot.send_audio(
-                chat_id, audio=file_id, title=title, performer=performer, thumbnail=thumb,
-                caption=caption, parse_mode="HTML",
-                reply_markup=reply_markup,
+            await send_chat_audio(
+                bot,
+                chat_id=chat_id,
+                file_id=file_id,
+                title=title,
+                performer=performer,
+                source=source,
+                thumbnail=thumb,
+                video_id=video_id,
+                url=url,
             )
             if message_id:
                 try:

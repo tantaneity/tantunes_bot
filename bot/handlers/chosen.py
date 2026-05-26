@@ -2,17 +2,15 @@ import asyncio
 import logging
 
 from aiogram import Bot, Router
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ChosenInlineResult, InputMediaAudio
+from aiogram.types import ChosenInlineResult
 from dishka.integrations.aiogram import FromDishka, inject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.services.cache import CacheService
 from bot.services.downloader import DownloaderService
-from bot.services.sender import build_audio_caption, deliver_audio, display_track_url, thumbnail_file
+from bot.services.sender import deliver_audio, display_track_url, edit_inline_audio, thumbnail_file
 from bot.services.tracker import TrackingService
-from bot.keyboards import track_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -47,25 +45,18 @@ async def handle_chosen_result(
         url = meta.get("url", "")
         await tracking.record_download(user_id, source, performer, title)
         if inline_message_id:
-            try:
-                cap = build_audio_caption(source, performer, title)
-                cap_kwargs = cap.as_kwargs()
-                await bot.edit_message_media(
-                    media=InputMediaAudio(
-                        media=file_id,
-                        title=title,
-                        performer=performer,
-                        thumbnail=thumbnail_file(meta.get("thumbnail")),
-                        caption=cap_kwargs["text"],
-                        caption_entities=cap_kwargs.get("entities"),
-                    ),
-                    inline_message_id=inline_message_id,
-                    reply_markup=track_keyboard(display_track_url(source, video_id, url)),
-                )
-            except TelegramBadRequest:
-                pass
+            await edit_inline_audio(
+                bot,
+                inline_message_id=inline_message_id,
+                file_id=file_id,
+                title=title,
+                performer=performer,
+                source=source,
+                thumbnail=thumbnail_file(meta.get("thumbnail")),
+                video_id=video_id,
+                url=url,
+            )
         return
-
 
     if not inline_message_id:
         return

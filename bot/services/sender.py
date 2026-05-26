@@ -13,14 +13,12 @@ from aiogram.types import (
     InputMediaAudio,
     URLInputFile,
 )
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from aiogram.utils.formatting import Bold, CustomEmoji, Text, TextLink
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.emoji import (
     DOWNLOAD_EMOJI_ID,
     ERROR,
-    MUSIC,
     MUSIC_EMOJI_ID,
     MUSIC_FALLBACK,
     PROCESSING,
@@ -40,11 +38,6 @@ logger = logging.getLogger(__name__)
 
 def thumbnail_file(url: str | None):
     return URLInputFile(url, filename="thumb.jpg") if url else None
-
-
-def audio_caption(source: str, performer: str, title: str) -> str:
-    src = SOURCE_EMOJI.get(source, source.upper())
-    return f'{MUSIC} <b><a href="https://t.me/instantaneity">{performer} — {title}</a></b> · {src}'
 
 
 def build_audio_caption(source: str, performer: str, title: str) -> Text:
@@ -78,6 +71,75 @@ def display_track_url(source: str, video_id: str, download_url: str | None) -> s
     return None
 
 
+def _make_input_media_audio(
+    file_id: str,
+    title: str,
+    performer: str,
+    source: str,
+    thumbnail,
+) -> InputMediaAudio:
+    cap = build_audio_caption(source, performer, title)
+    cap_kwargs = cap.as_kwargs()
+    return InputMediaAudio(
+        media=file_id,
+        title=title,
+        performer=performer,
+        thumbnail=thumbnail,
+        caption=cap_kwargs["text"],
+        caption_entities=cap_kwargs.get("entities"),
+    )
+
+
+async def edit_inline_audio(
+    bot: Bot,
+    *,
+    inline_message_id: str,
+    file_id: str,
+    title: str,
+    performer: str,
+    source: str,
+    thumbnail,
+    video_id: str,
+    url: str,
+) -> None:
+    media = _make_input_media_audio(file_id, title, performer, source, thumbnail)
+    reply_markup = track_keyboard(display_track_url(source, video_id, url))
+    try:
+        await bot.edit_message_media(
+            media=media,
+            inline_message_id=inline_message_id,
+            reply_markup=reply_markup,
+        )
+    except TelegramBadRequest:
+        pass
+
+
+async def send_chat_audio(
+    bot: Bot,
+    *,
+    chat_id: int,
+    file_id: str,
+    title: str,
+    performer: str,
+    source: str,
+    thumbnail,
+    video_id: str,
+    url: str,
+) -> None:
+    cap = build_audio_caption(source, performer, title)
+    cap_kwargs = cap.as_kwargs()
+    await bot.send_audio(
+        chat_id,
+        audio=file_id,
+        title=title,
+        performer=performer,
+        thumbnail=thumbnail,
+        caption=cap_kwargs["text"],
+        caption_entities=cap_kwargs.get("entities"),
+        reply_markup=track_keyboard(display_track_url(source, video_id, url)),
+    )
+
+
 def _progress_keyboard(source: str, video_id: str, pct: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[
@@ -105,7 +167,6 @@ def _make_progress_callback(
             ),
             loop,
         )
-
         fut.add_done_callback(lambda f: None if f.cancelled() else f.exception())
 
     return on_progress
@@ -182,36 +243,30 @@ async def deliver_audio(
             await tracking.record_download(user_id, source, performer, title)
             await session.commit()
 
-        caption = audio_caption(source, performer, title)
-        reply_markup = track_keyboard(display_track_url(source, video_id, url))
-
         if inline_message_id:
-            try:
-                await bot.edit_message_media(
-                    media=InputMediaAudio(
-                        media=file_id,
-                        title=title,
-                        performer=performer,
-                        thumbnail=thumb,
-                        caption=caption,
-                        parse_mode="HTML",
-                    ),
-                    inline_message_id=inline_message_id,
-                    reply_markup=reply_markup,
-                )
-            except TelegramBadRequest:
-                pass
+            await edit_inline_audio(
+                bot,
+                inline_message_id=inline_message_id,
+                file_id=file_id,
+                title=title,
+                performer=performer,
+                source=source,
+                thumbnail=thumb,
+                video_id=video_id,
+                url=url,
+            )
         else:
             if upload_target != chat_id:
-                await bot.send_audio(
-                    chat_id,
-                    audio=file_id,
+                await send_chat_audio(
+                    bot,
+                    chat_id=chat_id,
+                    file_id=file_id,
                     title=title,
                     performer=performer,
+                    source=source,
                     thumbnail=thumb,
-                    caption=caption,
-                    parse_mode="HTML",
-                    reply_markup=reply_markup,
+                    video_id=video_id,
+                    url=url,
                 )
             if message_id:
                 try:
