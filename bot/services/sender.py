@@ -3,6 +3,7 @@ import logging
 import shutil
 import tempfile
 from collections.abc import Callable
+from html import escape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -13,7 +14,6 @@ from aiogram.types import (
     InputMediaAudio,
     URLInputFile,
 )
-from aiogram.utils.formatting import Bold, CustomEmoji, Text, TextLink
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.emoji import (
@@ -40,18 +40,18 @@ def thumbnail_file(url: str | None):
     return URLInputFile(url, filename="thumb.jpg") if url else None
 
 
-def build_audio_caption(source: str, performer: str, title: str) -> Text:
+def build_caption_html(source: str, performer: str, title: str) -> str:
     src_id = SOURCE_EMOJI_IDS.get(source)
     src_fallback = SOURCE_EMOJI_FALLBACKS.get(source, source.upper())
-    src_node: CustomEmoji | str = (
-        CustomEmoji(src_fallback, custom_emoji_id=src_id) if src_id else src_fallback
+    music_tag = f'<tg-emoji emoji-id="{MUSIC_EMOJI_ID}">{MUSIC_FALLBACK}</tg-emoji>'
+    src_tag = (
+        f'<tg-emoji emoji-id="{src_id}">{src_fallback}</tg-emoji>'
+        if src_id else src_fallback
     )
-    return Text(
-        CustomEmoji(MUSIC_FALLBACK, custom_emoji_id=MUSIC_EMOJI_ID),
-        " ",
-        TextLink(Bold(f"{performer} — {title}"), url="https://t.me/instantaneity"),
-        " · ",
-        src_node,
+    return (
+        f'{music_tag} '
+        f'<a href="https://t.me/instantaneity"><b>{escape(performer)} — {escape(title)}</b></a>'
+        f' · {src_tag}'
     )
 
 
@@ -78,15 +78,13 @@ def _make_input_media_audio(
     source: str,
     thumbnail,
 ) -> InputMediaAudio:
-    cap = build_audio_caption(source, performer, title)
-    cap_kwargs = cap.as_kwargs()
     return InputMediaAudio(
         media=file_id,
         title=title,
         performer=performer,
         thumbnail=thumbnail,
-        caption=cap_kwargs["text"],
-        caption_entities=cap_kwargs.get("entities"),
+        caption=build_caption_html(source, performer, title),
+        parse_mode="HTML",
     )
 
 
@@ -126,16 +124,14 @@ async def send_chat_audio(
     video_id: str,
     url: str,
 ) -> None:
-    cap = build_audio_caption(source, performer, title)
-    cap_kwargs = cap.as_kwargs()
     await bot.send_audio(
         chat_id,
         audio=file_id,
         title=title,
         performer=performer,
         thumbnail=thumbnail,
-        caption=cap_kwargs["text"],
-        caption_entities=cap_kwargs.get("entities"),
+        caption=build_caption_html(source, performer, title),
+        parse_mode="HTML",
         reply_markup=track_keyboard(display_track_url(source, video_id, url)),
     )
 
