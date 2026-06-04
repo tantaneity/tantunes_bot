@@ -5,6 +5,7 @@ import redis.asyncio as aioredis
 _AUDIO_TTL = 30 * 24 * 3600
 _META_TTL = 7 * 24 * 3600
 _SEARCH_TTL = 5 * 60
+_ALBUM_TTL = 60 * 60
 
 
 class CacheService:
@@ -27,6 +28,9 @@ class CacheService:
 
     def _search_key(self, query: str) -> str:
         return f"search:{query.lower()}"
+
+    def _albums_key(self, token: str) -> str:
+        return f"albums:{token}"
 
     async def get_file_id(self, source: str, video_id: str) -> str | None:
         r = await self._get_client()
@@ -77,3 +81,12 @@ class CacheService:
     async def set_search_cache(self, query: str, tracks: list[dict]) -> None:
         r = await self._get_client()
         await r.set(self._search_key(query), json.dumps(tracks), ex=_SEARCH_TTL)
+
+    async def get_albums(self, token: str) -> list[dict] | None:
+        r = await self._get_client()
+        data = await r.get(self._albums_key(token))
+        return json.loads(data) if data else None
+
+    async def set_albums(self, token: str, albums: list[dict]) -> None:
+        r = await self._get_client()
+        await r.set(self._albums_key(token), json.dumps(albums), ex=_ALBUM_TTL)

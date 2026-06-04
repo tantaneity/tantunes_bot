@@ -10,3 +10,4 @@ class TrackInfo:
     performer: str
     duration: int
     thumbnail: str
+    isrc: str = ""
