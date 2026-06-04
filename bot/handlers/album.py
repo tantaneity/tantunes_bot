@@ -38,7 +38,7 @@ _SOUNDCLOUD_LIMIT = 5
 _GALLERY_LIMIT = 8
 _SPOTIFY_TIMEOUT = 10.0
 _SOUNDCLOUD_TIMEOUT = 30.0
-_MIN_MERGE_SCORE = 50
+_MIN_MERGE_SCORE = 55
 _TOKEN_BYTES = 4
 _EXPIRED_MESSAGE = "results expired, run /album again"
 
@@ -185,7 +185,7 @@ async def _safe_search(coro, timeout: float) -> list[AlbumInfo]:
 def _rank(query: str, albums: list[AlbumInfo]) -> list[AlbumInfo]:
     target = query.lower()
     scored = [
-        (fuzz.token_set_ratio(target, f"{album.artist} {album.title}".lower()), album)
+        (fuzz.token_sort_ratio(target, f"{album.artist} {album.title}".lower()), album)
         for album in albums
     ]
     relevant = [pair for pair in scored if pair[0] >= _MIN_MERGE_SCORE]

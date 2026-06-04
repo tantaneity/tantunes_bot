@@ -32,6 +32,23 @@ def _split_query(query: str) -> tuple[str, str]:
     return "", query.strip()
 
 
+def _candidate_terms(query: str, artist: str) -> list[str]:
+    raw = [artist] if artist else []
+    tokens = query.split()
+    if tokens:
+        raw.append(tokens[0])
+    if len(tokens) >= 2:
+        raw.append(" ".join(tokens[:2]))
+    raw.append(query)
+
+    ordered: list[str] = []
+    for term in raw:
+        term = term.strip()
+        if term and term.lower() not in {existing.lower() for existing in ordered}:
+            ordered.append(term)
+    return ordered
+
+
 def _entry_artist_title(entry: dict) -> tuple[str, str]:
     track_field = entry.get("track")
     artist_field = entry.get("artist") or entry.get("uploader") or "Unknown"
@@ -132,8 +149,7 @@ class SoundCloudAlbumService:
         artist, album = _split_query(query)
         target = (album or query).lower()
 
-        terms = [artist] if artist else []
-        terms.append(query)
+        terms = _candidate_terms(query, artist)
 
         candidates: dict[str, str] = {}
         for uploader_url in self._uploader_urls_sync(terms):
