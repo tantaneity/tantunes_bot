@@ -15,10 +15,11 @@ from aiogram.types import (
     Message,
 )
 from dishka.integrations.aiogram import FromDishka, inject
+from rapidfuzz import fuzz
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
-from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, MUSIC
+from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, MUSIC, PROCESSING, SOURCE_EMOJI
 from bot.models.album import AlbumInfo
 from bot.repositories.stats import DownloadRepository, SearchRepository
 from bot.repositories.user import UserRepository
@@ -32,7 +33,12 @@ from bot.services.tracker import TrackingService
 router = Router()
 logger = logging.getLogger(__name__)
 
-_SEARCH_LIMIT = 8
+_SPOTIFY_LIMIT = 8
+_SOUNDCLOUD_LIMIT = 5
+_GALLERY_LIMIT = 8
+_SPOTIFY_TIMEOUT = 10.0
+_SOUNDCLOUD_TIMEOUT = 30.0
+_MIN_MERGE_SCORE = 50
 _TOKEN_BYTES = 4
 _EXPIRED_MESSAGE = "results expired, run /album again"
 
@@ -46,11 +52,12 @@ def _is_soundcloud_album_url(text: str) -> bool:
 
 
 def _album_caption(album: AlbumInfo, index: int, total: int) -> str:
+    icon = SOURCE_EMOJI.get(album.source, MUSIC)
     parts = [p for p in (album.year, f"{album.track_count} tracks") if p]
     if total > 1:
         parts.append(f"{index + 1}/{total}")
     return (
-        f"{MUSIC} <b>{escape(album.artist)} — {escape(album.title)}</b>\n"
+        f"{icon} <b>{escape(album.artist)} — {escape(album.title)}</b>\n"
         f"{' · '.join(parts)}"
     )
 
@@ -106,16 +113,17 @@ async def handle_album(
     await tracking.record_user(message.from_user.id, message.from_user.username)
 
     if _is_soundcloud_album_url(query):
-        albums = await _soundcloud_albums(message, soundcloud_album_service, query)
-    else:
-        albums = await _spotify_albums(message, album_service, query)
-
-    if not albums:
+        await _handle_link(message, cache, soundcloud_album_service, query)
         return
 
+    await _handle_text_search(message, cache, album_service, soundcloud_album_service, query)
+
+
+async def _present_albums(
+    message: Message, cache: CacheService, albums: list[AlbumInfo]
+) -> None:
     token = secrets.token_hex(_TOKEN_BYTES)
     await cache.set_albums(token, [dataclasses.asdict(album) for album in albums])
-
     await message.answer_photo(
         photo=albums[0].cover,
         caption=_album_caption(albums[0], 0, len(albums)),
@@ -123,40 +131,66 @@ async def handle_album(
     )
 
 
-async def _spotify_albums(
-    message: Message, album_service: AlbumService | None, query: str
-) -> list[AlbumInfo]:
-    if album_service is None:
-        await message.answer(f"{ERROR} album search needs Spotify configured")
-        return []
-
-    try:
-        albums = await album_service.search_albums(query, _SEARCH_LIMIT)
-    except Exception:
-        logger.exception("Album search failed for %r", query)
-        await message.answer(f"{ERROR} search failed, try again")
-        return []
-
-    albums = [album for album in albums if album.cover]
-    if not albums:
-        await message.answer(f"{ERROR} nothing found")
-    return albums
-
-
-async def _soundcloud_albums(
-    message: Message, service: SoundCloudAlbumService, url: str
-) -> list[AlbumInfo]:
+async def _handle_link(
+    message: Message, cache: CacheService, service: SoundCloudAlbumService, url: str
+) -> None:
     try:
         album = await service.fetch_album(url)
     except Exception:
         logger.exception("SoundCloud album failed for %r", url)
-        await message.answer(f"{ERROR} couldn't read that SoundCloud album")
-        return []
+        album = None
 
     if not album or not album.cover:
         await message.answer(f"{ERROR} couldn't read that SoundCloud album")
+        return
+    await _present_albums(message, cache, [album])
+
+
+async def _handle_text_search(
+    message: Message,
+    cache: CacheService,
+    spotify: AlbumService | None,
+    soundcloud: SoundCloudAlbumService,
+    query: str,
+) -> None:
+    status = await message.answer(f"{PROCESSING} searching albums…")
+    albums = await _search_albums(spotify, soundcloud, query)
+    if not albums:
+        await status.edit_text(f"{ERROR} nothing found")
+        return
+    await _present_albums(message, cache, albums)
+    await status.delete()
+
+
+async def _search_albums(
+    spotify: AlbumService | None, soundcloud: SoundCloudAlbumService, query: str
+) -> list[AlbumInfo]:
+    tasks = [_safe_search(soundcloud.search_albums(query, _SOUNDCLOUD_LIMIT), _SOUNDCLOUD_TIMEOUT)]
+    if spotify is not None:
+        tasks.append(_safe_search(spotify.search_albums(query, _SPOTIFY_LIMIT), _SPOTIFY_TIMEOUT))
+
+    gathered = await asyncio.gather(*tasks)
+    albums = [album for group in gathered for album in group if album.cover]
+    return _rank(query, albums)[:_GALLERY_LIMIT]
+
+
+async def _safe_search(coro, timeout: float) -> list[AlbumInfo]:
+    try:
+        return await asyncio.wait_for(coro, timeout)
+    except Exception:
+        logger.warning("Album source failed", exc_info=True)
         return []
-    return [album]
+
+
+def _rank(query: str, albums: list[AlbumInfo]) -> list[AlbumInfo]:
+    target = query.lower()
+    scored = [
+        (fuzz.token_set_ratio(target, f"{album.artist} {album.title}".lower()), album)
+        for album in albums
+    ]
+    relevant = [pair for pair in scored if pair[0] >= _MIN_MERGE_SCORE]
+    relevant.sort(key=lambda pair: pair[0], reverse=True)
+    return [album for _, album in relevant]
 
 
 @router.callback_query(lambda c: c.data == "ab:noop")

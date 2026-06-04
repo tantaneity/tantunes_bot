@@ -8,12 +8,13 @@ type `@tantunes_bot <query>` in any chat — select a track — audio appears in
 
 whole albums go through a command. send `/album artist - album`, flip through the cover gallery
 with `‹ ›`, hit download. tracks come back as grouped audio, each one cached so the next person
-who searches it gets an instant result. needs spotify configured (for the album search) and
-`UPLOAD_CHANNEL_ID` set (where the audio lives).
+who searches it gets an instant result. needs `UPLOAD_CHANNEL_ID` set (where the audio lives).
 
-soundcloud albums work too, just by link. there's no text search for sets on soundcloud, so paste
-the album url instead: `/album https://soundcloud.com/artist/sets/name`. same picker, same flow,
-spotify not required.
+the gallery spans both spotify and soundcloud, each cover tagged with its source. spotify gets a
+real album search; soundcloud has no album search api, so the bot fakes one — finds the artist
+from the query, walks their albums, matches by title. works surprisingly well, but if it whiffs
+just paste the set link directly: `/album https://soundcloud.com/artist/sets/name`. spotify is
+optional, soundcloud works without it.
 
 ## stack
 

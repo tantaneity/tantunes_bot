@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import yt_dlp
+from rapidfuzz import fuzz
 
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
@@ -12,12 +13,23 @@ logger = logging.getLogger(__name__)
 _FLAT_OPTS = {"quiet": True, "no_warnings": True, "extract_flat": True}
 _FULL_OPTS = {"quiet": True, "no_warnings": True}
 
+_SCSEARCH_RESULTS = 4
+_MAX_UPLOADERS = 3
+_MIN_TITLE_SCORE = 60
+
 
 def _best_thumbnail(item: dict) -> str:
     thumbnails = item.get("thumbnails") or []
     if thumbnails:
         return thumbnails[-1].get("url") or ""
     return item.get("thumbnail") or ""
+
+
+def _split_query(query: str) -> tuple[str, str]:
+    if " - " in query:
+        artist, album = query.split(" - ", 1)
+        return artist.strip(), album.strip()
+    return "", query.strip()
 
 
 def _entry_artist_title(entry: dict) -> tuple[str, str]:
@@ -85,8 +97,72 @@ class SoundCloudAlbumService:
             )
         return tracks
 
+    def _uploader_urls_sync(self, terms: list[str]) -> list[str]:
+        ordered: list[str] = []
+        for term in terms:
+            try:
+                with yt_dlp.YoutubeDL(_FLAT_OPTS) as ydl:
+                    info = ydl.extract_info(f"scsearch{_SCSEARCH_RESULTS}:{term}", download=False)
+            except Exception:
+                logger.debug("scsearch failed for term %r", term, exc_info=True)
+                continue
+            for entry in (info.get("entries") or []):
+                uploader_url = entry.get("uploader_url")
+                if uploader_url and uploader_url not in ordered:
+                    ordered.append(uploader_url)
+        return ordered[:_MAX_UPLOADERS]
+
+    def _list_albums_sync(self, uploader_url: str) -> list[tuple[str, str]]:
+        url = f"{uploader_url.rstrip('/')}/albums"
+        try:
+            with yt_dlp.YoutubeDL(_FLAT_OPTS) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception:
+            logger.debug("Album list failed for %r", url, exc_info=True)
+            return []
+        albums: list[tuple[str, str]] = []
+        for entry in (info.get("entries") or []):
+            title = entry.get("title")
+            album_url = entry.get("webpage_url") or entry.get("url")
+            if title and album_url:
+                albums.append((title, album_url))
+        return albums
+
+    def _search_sync(self, query: str, limit: int) -> list[AlbumInfo]:
+        artist, album = _split_query(query)
+        target = (album or query).lower()
+
+        terms = [artist] if artist else []
+        terms.append(query)
+
+        candidates: dict[str, str] = {}
+        for uploader_url in self._uploader_urls_sync(terms):
+            for title, album_url in self._list_albums_sync(uploader_url):
+                candidates.setdefault(album_url, title)
+
+        ranked = sorted(
+            (
+                (fuzz.token_set_ratio(target, title.lower()), album_url)
+                for album_url, title in candidates.items()
+            ),
+            key=lambda scored: scored[0],
+            reverse=True,
+        )
+
+        results: list[AlbumInfo] = []
+        for score, album_url in ranked:
+            if score < _MIN_TITLE_SCORE or len(results) >= limit:
+                break
+            meta = self._meta_sync(album_url)
+            if meta:
+                results.append(meta)
+        return results
+
     async def fetch_album(self, url: str) -> AlbumInfo | None:
         return await asyncio.to_thread(self._meta_sync, url)
+
+    async def search_albums(self, query: str, limit: int) -> list[AlbumInfo]:
+        return await asyncio.to_thread(self._search_sync, query, limit)
 
     async def get_tracks(self, url: str) -> list[TrackInfo]:
         return await asyncio.to_thread(self._tracks_sync, url)
