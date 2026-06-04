@@ -10,7 +10,7 @@ from bot.config import settings
 from bot.core.container import create_container
 from bot.core.db import init_db
 from bot.emoji import DOWNLOAD_EMOJI_ID, MUSIC_EMOJI_ID, SOURCE_EMOJI_IDS
-from bot.handlers import admin, callbacks, chosen, commands, inline
+from bot.handlers import admin, album, callbacks, chosen, commands, inline
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +50,7 @@ async def main() -> None:
 
     dp.include_router(commands.router)
     dp.include_router(admin.router)
+    dp.include_router(album.router)
     dp.include_router(inline.router)
     dp.include_router(chosen.router)
     dp.include_router(callbacks.router)

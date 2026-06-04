@@ -6,6 +6,11 @@ inline telegram bot for searching and streaming music from spotify, soundcloud a
 
 type `@tantunes_bot <query>` in any chat — select a track — audio appears in place.
 
+whole albums go through a command. send `/album artist - album`, flip through the cover gallery
+with `‹ ›`, hit download. tracks come back as grouped audio, each one cached so the next person
+who searches it gets an instant result. needs spotify configured (for the album search) and
+`UPLOAD_CHANNEL_ID` set (where the audio lives).
+
 ## stack
 
 - **aiogram 3** — telegram bot framework

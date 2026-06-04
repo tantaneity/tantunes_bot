@@ -7,6 +7,7 @@ from bot.config import Settings, settings
 from bot.core.db import AsyncSessionFactory
 from bot.repositories.stats import DownloadRepository, SearchRepository
 from bot.repositories.user import UserRepository
+from bot.services.album import AlbumService
 from bot.services.cache import CacheService
 from bot.services.deezer import DeezerDownloader
 from bot.services.downloader import DownloaderService
@@ -36,6 +37,12 @@ class AppProvider(Provider):
     @provide
     def get_downloader(self, deezer: DeezerDownloader | None) -> DownloaderService:
         return DownloaderService(deezer)
+
+    @provide
+    def get_album_service(self, s: Settings) -> AlbumService | None:
+        if s.spotify_enabled:
+            return AlbumService(s.SPOTIFY_CLIENT_ID, s.SPOTIFY_CLIENT_SECRET)
+        return None
 
     @provide
     def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
