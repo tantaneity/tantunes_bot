@@ -26,6 +26,7 @@ from bot.services.album import AlbumService
 from bot.services.album_delivery import deliver_album
 from bot.services.cache import CacheService
 from bot.services.downloader import DownloaderService
+from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.tracker import TrackingService
 
 router = Router()
@@ -36,11 +37,21 @@ _TOKEN_BYTES = 4
 _EXPIRED_MESSAGE = "results expired, run /album again"
 
 
+def _is_soundcloud_album_url(text: str) -> bool:
+    return (
+        text.startswith(("http://", "https://"))
+        and "soundcloud.com" in text
+        and "/sets/" in text
+    )
+
+
 def _album_caption(album: AlbumInfo, index: int, total: int) -> str:
-    counter = f" · {index + 1}/{total}" if total > 1 else ""
+    parts = [p for p in (album.year, f"{album.track_count} tracks") if p]
+    if total > 1:
+        parts.append(f"{index + 1}/{total}")
     return (
         f"{MUSIC} <b>{escape(album.artist)} — {escape(album.title)}</b>\n"
-        f"{album.year} · {album.track_count} tracks{counter}"
+        f"{' · '.join(parts)}"
     )
 
 
@@ -80,30 +91,26 @@ async def handle_album(
     message: Message,
     command: CommandObject,
     album_service: FromDishka[AlbumService | None],
+    soundcloud_album_service: FromDishka[SoundCloudAlbumService],
     cache: FromDishka[CacheService],
     tracking: FromDishka[TrackingService],
 ) -> None:
-    if album_service is None:
-        await message.answer(f"{ERROR} album search needs Spotify configured")
-        return
-
     query = (command.args or "").strip()
     if not query:
-        await message.answer("usage: <code>/album artist - album</code>")
+        await message.answer(
+            "usage: <code>/album artist - album</code>\n"
+            "or paste a SoundCloud album link"
+        )
         return
 
     await tracking.record_user(message.from_user.id, message.from_user.username)
 
-    try:
-        albums = await album_service.search_albums(query, _SEARCH_LIMIT)
-    except Exception:
-        logger.exception("Album search failed for %r", query)
-        await message.answer(f"{ERROR} search failed, try again")
-        return
+    if _is_soundcloud_album_url(query):
+        albums = await _soundcloud_albums(message, soundcloud_album_service, query)
+    else:
+        albums = await _spotify_albums(message, album_service, query)
 
-    albums = [album for album in albums if album.cover]
     if not albums:
-        await message.answer(f"{ERROR} nothing found")
         return
 
     token = secrets.token_hex(_TOKEN_BYTES)
@@ -114,6 +121,42 @@ async def handle_album(
         caption=_album_caption(albums[0], 0, len(albums)),
         reply_markup=_picker_keyboard(token, 0, len(albums)),
     )
+
+
+async def _spotify_albums(
+    message: Message, album_service: AlbumService | None, query: str
+) -> list[AlbumInfo]:
+    if album_service is None:
+        await message.answer(f"{ERROR} album search needs Spotify configured")
+        return []
+
+    try:
+        albums = await album_service.search_albums(query, _SEARCH_LIMIT)
+    except Exception:
+        logger.exception("Album search failed for %r", query)
+        await message.answer(f"{ERROR} search failed, try again")
+        return []
+
+    albums = [album for album in albums if album.cover]
+    if not albums:
+        await message.answer(f"{ERROR} nothing found")
+    return albums
+
+
+async def _soundcloud_albums(
+    message: Message, service: SoundCloudAlbumService, url: str
+) -> list[AlbumInfo]:
+    try:
+        album = await service.fetch_album(url)
+    except Exception:
+        logger.exception("SoundCloud album failed for %r", url)
+        await message.answer(f"{ERROR} couldn't read that SoundCloud album")
+        return []
+
+    if not album or not album.cover:
+        await message.answer(f"{ERROR} couldn't read that SoundCloud album")
+        return []
+    return [album]
 
 
 @router.callback_query(lambda c: c.data == "ab:noop")
@@ -157,12 +200,13 @@ async def handle_album_download(
     cache: FromDishka[CacheService],
     downloader: FromDishka[DownloaderService],
     album_service: FromDishka[AlbumService | None],
+    soundcloud_album_service: FromDishka[SoundCloudAlbumService],
     session_factory: FromDishka[async_sessionmaker[AsyncSession]],
     s: FromDishka[Settings],
 ) -> None:
     _, _, token, raw_index = callback.data.split(":")
     albums = await _load_albums(cache, token)
-    if not albums or album_service is None:
+    if not albums:
         await callback.answer(_EXPIRED_MESSAGE, show_alert=True)
         return
 
@@ -186,6 +230,7 @@ async def handle_album_download(
             picker_message_id=callback.message.message_id,
             album=album,
             album_service=album_service,
+            soundcloud_album_service=soundcloud_album_service,
             cache=cache,
             downloader=downloader,
             session_factory=session_factory,
@@ -196,13 +241,26 @@ async def handle_album_download(
     )
 
 
+async def _fetch_album_tracks(
+    album: AlbumInfo,
+    album_service: AlbumService | None,
+    soundcloud_album_service: SoundCloudAlbumService,
+):
+    if album.source == "soundcloud":
+        return await soundcloud_album_service.get_tracks(album.album_id)
+    if album_service is None:
+        raise RuntimeError("Spotify album service unavailable")
+    return await album_service.get_tracks(album.album_id)
+
+
 async def _run_album_download(
     *,
     bot: Bot,
     chat_id: int,
     picker_message_id: int,
     album: AlbumInfo,
-    album_service: AlbumService,
+    album_service: AlbumService | None,
+    soundcloud_album_service: SoundCloudAlbumService,
     cache: CacheService,
     downloader: DownloaderService,
     session_factory: async_sessionmaker[AsyncSession],
@@ -210,7 +268,7 @@ async def _run_album_download(
     upload_channel_id: int,
 ) -> None:
     try:
-        tracks = await album_service.get_tracks(album.album_id)
+        tracks = await _fetch_album_tracks(album, album_service, soundcloud_album_service)
     except Exception:
         logger.exception("Album tracklist failed for %s", album.album_id)
         await _safe_caption(bot, chat_id, picker_message_id, f"{ERROR} failed to load tracklist")
@@ -238,7 +296,7 @@ async def _run_album_download(
                 DownloadRepository(session),
                 SearchRepository(session),
             )
-            await tracking.record_download(user_id, "spotify", album.artist, album.title)
+            await tracking.record_download(user_id, album.source, album.artist, album.title)
             await session.commit()
 
 

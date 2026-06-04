@@ -11,6 +11,10 @@ with `‹ ›`, hit download. tracks come back as grouped audio, each one cached
 who searches it gets an instant result. needs spotify configured (for the album search) and
 `UPLOAD_CHANNEL_ID` set (where the audio lives).
 
+soundcloud albums work too, just by link. there's no text search for sets on soundcloud, so paste
+the album url instead: `/album https://soundcloud.com/artist/sets/name`. same picker, same flow,
+spotify not required.
+
 ## stack
 
 - **aiogram 3** — telegram bot framework

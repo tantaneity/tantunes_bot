@@ -12,6 +12,7 @@ from bot.services.cache import CacheService
 from bot.services.deezer import DeezerDownloader
 from bot.services.downloader import DownloaderService
 from bot.services.search import SearchService, YtDlpProvider
+from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.stats import StatsService
 from bot.services.tracker import TrackingService
 
@@ -43,6 +44,10 @@ class AppProvider(Provider):
         if s.spotify_enabled:
             return AlbumService(s.SPOTIFY_CLIENT_ID, s.SPOTIFY_CLIENT_SECRET)
         return None
+
+    @provide
+    def get_soundcloud_album_service(self) -> SoundCloudAlbumService:
+        return SoundCloudAlbumService()
 
     @provide
     def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
