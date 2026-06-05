@@ -1,15 +1,12 @@
-import asyncio
 import logging
 
 from aiogram import Bot, Router
 from aiogram.types import ChosenInlineResult
+from arq import ArqRedis
 from dishka.integrations.aiogram import FromDishka, inject
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bot.config import Settings
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
-from bot.services.sender import deliver_audio, display_track_url, edit_inline_audio, thumbnail_file
+from bot.services.sender import edit_inline_audio, thumbnail_file
 from bot.services.tracker import TrackingService
 
 router = Router()
@@ -22,10 +19,8 @@ async def handle_chosen_result(
     result: ChosenInlineResult,
     bot: Bot,
     cache: FromDishka[CacheService],
-    downloader: FromDishka[DownloaderService],
     tracking: FromDishka[TrackingService],
-    session_factory: FromDishka[async_sessionmaker[AsyncSession]],
-    s: FromDishka[Settings],
+    arq: FromDishka[ArqRedis],
 ) -> None:
     parts = result.result_id.split(":", 1)
     if len(parts) != 2:
@@ -61,19 +56,13 @@ async def handle_chosen_result(
     if not inline_message_id:
         return
 
-    asyncio.create_task(
-        deliver_audio(
-            bot=bot,
-            user_id=user_id,
-            chat_id=user_id,
-            message_id=None,
-            inline_message_id=inline_message_id,
-            source=source,
-            video_id=video_id,
-            cache=cache,
-            downloader=downloader,
-            session_factory=session_factory,
-            upload_channel_id=s.UPLOAD_CHANNEL_ID,
-        ),
-        name=f"chosen:{source}:{video_id}",
+    await arq.enqueue_job(
+        "download_track",
+        user_id=user_id,
+        chat_id=user_id,
+        message_id=None,
+        inline_message_id=inline_message_id,
+        source=source,
+        video_id=video_id,
+        _job_id=f"track:{source}:{video_id}:{inline_message_id}",
     )

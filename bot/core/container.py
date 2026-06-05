@@ -1,5 +1,7 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 
+from arq import ArqRedis, create_pool
+from arq.connections import RedisSettings
 from dishka import Provider, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -52,6 +54,12 @@ class AppProvider(Provider):
     @provide
     def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
         return AsyncSessionFactory
+
+    @provide
+    async def get_arq_pool(self, s: Settings) -> AsyncIterator[ArqRedis]:
+        pool = await create_pool(RedisSettings.from_dsn(s.REDIS_URL))
+        yield pool
+        await pool.aclose()
 
     @provide
     def get_search_service(self, cache: CacheService, s: Settings) -> SearchService:

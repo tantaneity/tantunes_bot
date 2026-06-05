@@ -4,7 +4,7 @@ import logging
 import secrets
 from html import escape
 
-from aiogram import Bot, Router
+from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
@@ -14,19 +14,15 @@ from aiogram.types import (
     InputMediaPhoto,
     Message,
 )
+from arq import ArqRedis
 from dishka.integrations.aiogram import FromDishka, inject
 from rapidfuzz import fuzz
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, MUSIC, PROCESSING, SOURCE_EMOJI
 from bot.models.album import AlbumInfo
-from bot.repositories.stats import DownloadRepository, SearchRepository
-from bot.repositories.user import UserRepository
 from bot.services.album import AlbumService
-from bot.services.album_delivery import deliver_album
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
 from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.tracker import TrackingService
 
@@ -230,13 +226,9 @@ async def handle_album_page(
 @inject
 async def handle_album_download(
     callback: CallbackQuery,
-    bot: Bot,
     cache: FromDishka[CacheService],
-    downloader: FromDishka[DownloaderService],
-    album_service: FromDishka[AlbumService | None],
-    soundcloud_album_service: FromDishka[SoundCloudAlbumService],
-    session_factory: FromDishka[async_sessionmaker[AsyncSession]],
     s: FromDishka[Settings],
+    arq: FromDishka[ArqRedis],
 ) -> None:
     _, _, token, raw_index = callback.data.split(":")
     albums = await _load_albums(cache, token)
@@ -249,95 +241,19 @@ async def handle_album_download(
         return
 
     index = int(raw_index) % len(albums)
-    album = albums[index]
-    await callback.answer("downloading…")
+    await callback.answer("queued…")
 
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except TelegramBadRequest:
         pass
 
-    asyncio.create_task(
-        _run_album_download(
-            bot=bot,
-            chat_id=callback.message.chat.id,
-            picker_message_id=callback.message.message_id,
-            album=album,
-            album_service=album_service,
-            soundcloud_album_service=soundcloud_album_service,
-            cache=cache,
-            downloader=downloader,
-            session_factory=session_factory,
-            user_id=callback.from_user.id,
-            upload_channel_id=s.UPLOAD_CHANNEL_ID,
-        ),
-        name=f"album:{album.album_id}",
+    await arq.enqueue_job(
+        "download_album",
+        token=token,
+        index=index,
+        chat_id=callback.message.chat.id,
+        picker_message_id=callback.message.message_id,
+        user_id=callback.from_user.id,
+        _job_id=f"album:{token}:{index}",
     )
-
-
-async def _fetch_album_tracks(
-    album: AlbumInfo,
-    album_service: AlbumService | None,
-    soundcloud_album_service: SoundCloudAlbumService,
-):
-    if album.source == "soundcloud":
-        return await soundcloud_album_service.get_tracks(album.album_id)
-    if album_service is None:
-        raise RuntimeError("Spotify album service unavailable")
-    return await album_service.get_tracks(album.album_id)
-
-
-async def _run_album_download(
-    *,
-    bot: Bot,
-    chat_id: int,
-    picker_message_id: int,
-    album: AlbumInfo,
-    album_service: AlbumService | None,
-    soundcloud_album_service: SoundCloudAlbumService,
-    cache: CacheService,
-    downloader: DownloaderService,
-    session_factory: async_sessionmaker[AsyncSession],
-    user_id: int,
-    upload_channel_id: int,
-) -> None:
-    try:
-        tracks = await _fetch_album_tracks(album, album_service, soundcloud_album_service)
-    except Exception:
-        logger.exception("Album tracklist failed for %s", album.album_id)
-        await _safe_caption(bot, chat_id, picker_message_id, f"{ERROR} failed to load tracklist")
-        return
-
-    if not tracks:
-        await _safe_caption(bot, chat_id, picker_message_id, f"{ERROR} album has no tracks")
-        return
-
-    delivered = await deliver_album(
-        bot=bot,
-        chat_id=chat_id,
-        picker_message_id=picker_message_id,
-        album=album,
-        tracks=tracks,
-        cache=cache,
-        downloader=downloader,
-        upload_channel_id=upload_channel_id,
-    )
-
-    if delivered:
-        async with session_factory() as session:
-            tracking = TrackingService(
-                UserRepository(session),
-                DownloadRepository(session),
-                SearchRepository(session),
-            )
-            await tracking.record_download(user_id, album.source, album.artist, album.title)
-            await session.commit()
-
-
-async def _safe_caption(bot: Bot, chat_id: int, message_id: int, text: str) -> None:
-    try:
-        await bot.edit_message_caption(
-            chat_id=chat_id, message_id=message_id, caption=text, parse_mode="HTML"
-        )
-    except TelegramBadRequest:
-        pass

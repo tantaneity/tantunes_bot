@@ -9,6 +9,17 @@ services:
     volumes:
       - bot_data:/app/data
 
+  worker:
+    build: .
+    env_file: .env
+    command: arq bot.queue.worker.WorkerSettings
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - bot_data:/app/data
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped

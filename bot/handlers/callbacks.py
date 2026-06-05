@@ -1,18 +1,13 @@
-import asyncio
 import logging
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
+from arq import ArqRedis
 from dishka.integrations.aiogram import FromDishka, inject
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bot.config import Settings
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
 from bot.services.sender import (
-    deliver_audio,
-    display_track_url,
     edit_inline_audio,
     processing_message,
     send_chat_audio,
@@ -30,10 +25,8 @@ async def handle_download_callback(
     callback: CallbackQuery,
     bot: Bot,
     cache: FromDishka[CacheService],
-    downloader: FromDishka[DownloaderService],
     tracking: FromDishka[TrackingService],
-    session_factory: FromDishka[async_sessionmaker[AsyncSession]],
-    s: FromDishka[Settings],
+    arq: FromDishka[ArqRedis],
 ) -> None:
     _, source, video_id = callback.data.split(":", 2)
     await callback.answer("Processing…")
@@ -103,19 +96,13 @@ async def handle_download_callback(
     except TelegramBadRequest:
         pass
 
-    asyncio.create_task(
-        deliver_audio(
-            bot=bot,
-            user_id=user_id,
-            chat_id=chat_id,
-            message_id=message_id,
-            inline_message_id=inline_message_id,
-            source=source,
-            video_id=video_id,
-            cache=cache,
-            downloader=downloader,
-            session_factory=session_factory,
-            upload_channel_id=s.UPLOAD_CHANNEL_ID,
-        ),
-        name=f"dl:{source}:{video_id}",
+    await arq.enqueue_job(
+        "download_track",
+        user_id=user_id,
+        chat_id=chat_id,
+        message_id=message_id,
+        inline_message_id=inline_message_id,
+        source=source,
+        video_id=video_id,
+        _job_id=f"track:{source}:{video_id}:{inline_message_id or f'{chat_id}:{message_id}'}",
     )
