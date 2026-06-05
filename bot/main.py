@@ -2,11 +2,8 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from dishka.integrations.aiogram import setup_dishka
 
-from bot.config import settings
 from bot.core.container import create_container
 from bot.core.db import init_db
 from bot.emoji import DOWNLOAD_EMOJI_ID, MUSIC_EMOJI_ID, SOURCE_EMOJI_IDS
@@ -40,10 +37,7 @@ async def main() -> None:
 
     container = create_container()
 
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
+    bot = await container.get(Bot)
     dp = Dispatcher()
 
     setup_dishka(container, router=dp)

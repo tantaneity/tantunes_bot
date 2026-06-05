@@ -1,5 +1,8 @@
 from collections.abc import AsyncGenerator, AsyncIterator
 
+from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from dishka import Provider, Scope, make_async_container, provide
@@ -28,6 +31,15 @@ class AppProvider(Provider):
     @provide
     def get_settings(self) -> Settings:
         return settings
+
+    @provide
+    async def get_bot(self, s: Settings) -> AsyncIterator[Bot]:
+        bot = Bot(
+            token=s.BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        yield bot
+        await bot.session.close()
 
     @provide
     def get_cache(self, s: Settings) -> CacheService:

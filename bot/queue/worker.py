@@ -2,8 +2,6 @@ import logging
 from typing import Any
 
 from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -29,10 +27,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     await init_db()
     container = create_container()
     ctx["container"] = container
-    ctx["bot"] = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
+    ctx["bot"] = await container.get(Bot)
     ctx["cache"] = await container.get(CacheService)
     ctx["downloader"] = await container.get(DownloaderService)
     ctx["album_service"] = await container.get(AlbumService | None)
@@ -42,7 +37,6 @@ async def startup(ctx: dict[str, Any]) -> None:
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    await ctx["bot"].session.close()
     await ctx["container"].close()
 
 
