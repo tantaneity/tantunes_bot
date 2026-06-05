@@ -6,6 +6,7 @@ _AUDIO_TTL = 30 * 24 * 3600
 _META_TTL = 7 * 24 * 3600
 _SEARCH_TTL = 5 * 60
 _ALBUM_TTL = 60 * 60
+_ALBUM_SEARCH_TTL = 15 * 60
 
 
 class CacheService:
@@ -31,6 +32,12 @@ class CacheService:
 
     def _albums_key(self, token: str) -> str:
         return f"albums:{token}"
+
+    def _album_search_key(self, query: str) -> str:
+        return f"albumsearch:{query.lower()}"
+
+    def _album_audio_key(self, source: str, album_id: str) -> str:
+        return f"albumaudio:{source}:{album_id}"
 
     async def get_file_id(self, source: str, video_id: str) -> str | None:
         r = await self._get_client()
@@ -90,3 +97,21 @@ class CacheService:
     async def set_albums(self, token: str, albums: list[dict]) -> None:
         r = await self._get_client()
         await r.set(self._albums_key(token), json.dumps(albums), ex=_ALBUM_TTL)
+
+    async def get_album_search(self, query: str) -> list[dict] | None:
+        r = await self._get_client()
+        data = await r.get(self._album_search_key(query))
+        return json.loads(data) if data else None
+
+    async def set_album_search(self, query: str, albums: list[dict]) -> None:
+        r = await self._get_client()
+        await r.set(self._album_search_key(query), json.dumps(albums), ex=_ALBUM_SEARCH_TTL)
+
+    async def get_album_audio(self, source: str, album_id: str) -> list[dict] | None:
+        r = await self._get_client()
+        data = await r.get(self._album_audio_key(source, album_id))
+        return json.loads(data) if data else None
+
+    async def set_album_audio(self, source: str, album_id: str, items: list[dict]) -> None:
+        r = await self._get_client()
+        await r.set(self._album_audio_key(source, album_id), json.dumps(items), ex=_AUDIO_TTL)

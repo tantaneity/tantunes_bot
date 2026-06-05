@@ -1,18 +1,12 @@
 import logging
 
-from aiogram import Bot, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram import Router
 from aiogram.types import CallbackQuery
 from arq import ArqRedis
 from dishka.integrations.aiogram import FromDishka, inject
 
 from bot.services.cache import CacheService
-from bot.services.sender import (
-    edit_inline_audio,
-    processing_message,
-    send_chat_audio,
-    thumbnail_file,
-)
+from bot.services.delivery import AudioMessage, AudioMessenger, CaptionRenderer
 from bot.services.tracker import TrackingService
 
 router = Router()
@@ -23,8 +17,9 @@ logger = logging.getLogger(__name__)
 @inject
 async def handle_download_callback(
     callback: CallbackQuery,
-    bot: Bot,
     cache: FromDishka[CacheService],
+    messenger: FromDishka[AudioMessenger],
+    captions: FromDishka[CaptionRenderer],
     tracking: FromDishka[TrackingService],
     arq: FromDishka[ArqRedis],
 ) -> None:
@@ -46,55 +41,23 @@ async def handle_download_callback(
     file_id = await cache.get_file_id(source, video_id)
     if file_id:
         meta = await cache.get_track_meta(source, video_id) or {}
-        title = meta.get("title", "Unknown")
-        performer = meta.get("performer", "Unknown")
-        url = meta.get("url", "")
-        thumb = thumbnail_file(meta.get("thumbnail"))
-        await tracking.record_download(user_id, source, performer, title)
+        item = AudioMessage.from_meta(source, video_id, meta, file_id)
+        await tracking.record_download(user_id, source, item.performer, item.title)
 
         if inline_message_id:
-            await edit_inline_audio(
-                bot,
-                inline_message_id=inline_message_id,
-                file_id=file_id,
-                title=title,
-                performer=performer,
-                source=source,
-                thumbnail=thumb,
-                video_id=video_id,
-                url=url,
-            )
+            await messenger.edit_inline_audio(inline_message_id, item)
         else:
-            await send_chat_audio(
-                bot,
-                chat_id=chat_id,
-                file_id=file_id,
-                title=title,
-                performer=performer,
-                source=source,
-                thumbnail=thumb,
-                video_id=video_id,
-                url=url,
-            )
+            await messenger.send_chat_audio(chat_id, item)
             if message_id:
-                try:
-                    await bot.delete_message(chat_id, message_id)
-                except TelegramBadRequest:
-                    pass
+                await messenger.delete(chat_id, message_id)
         return
 
-    proc_text = processing_message(source)
-    try:
-        if message_id:
-            await callback.message.edit_text(proc_text, parse_mode="HTML")
-        elif inline_message_id:
-            await bot.edit_message_text(
-                proc_text,
-                inline_message_id=inline_message_id,
-                parse_mode="HTML",
-            )
-    except TelegramBadRequest:
-        pass
+    await messenger.show_text(
+        text=captions.processing(),
+        chat_id=chat_id,
+        message_id=message_id,
+        inline_message_id=inline_message_id,
+    )
 
     await arq.enqueue_job(
         "download_track",

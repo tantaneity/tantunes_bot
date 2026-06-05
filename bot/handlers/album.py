@@ -1,8 +1,8 @@
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import secrets
-from html import escape
 
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
@@ -19,10 +19,11 @@ from dishka.integrations.aiogram import FromDishka, inject
 from rapidfuzz import fuzz
 
 from bot.config import Settings
-from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, MUSIC, PROCESSING, SOURCE_EMOJI
+from bot.emoji import DOWNLOAD_EMOJI_ID, ERROR, PROCESSING
 from bot.models.album import AlbumInfo
 from bot.services.album import AlbumService
 from bot.services.cache import CacheService
+from bot.services.delivery import CaptionRenderer
 from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.tracker import TrackingService
 
@@ -44,17 +45,6 @@ def _is_soundcloud_album_url(text: str) -> bool:
         text.startswith(("http://", "https://"))
         and "soundcloud.com" in text
         and "/sets/" in text
-    )
-
-
-def _album_caption(album: AlbumInfo, index: int, total: int) -> str:
-    icon = SOURCE_EMOJI.get(album.source, MUSIC)
-    parts = [p for p in (album.year, f"{album.track_count} tracks") if p]
-    if total > 1:
-        parts.append(f"{index + 1}/{total}")
-    return (
-        f"{icon} <b>{escape(album.artist)} — {escape(album.title)}</b>\n"
-        f"{' · '.join(parts)}"
     )
 
 
@@ -96,6 +86,7 @@ async def handle_album(
     album_service: FromDishka[AlbumService | None],
     soundcloud_album_service: FromDishka[SoundCloudAlbumService],
     cache: FromDishka[CacheService],
+    captions: FromDishka[CaptionRenderer],
     tracking: FromDishka[TrackingService],
 ) -> None:
     query = (command.args or "").strip()
@@ -109,26 +100,32 @@ async def handle_album(
     await tracking.record_user(message.from_user.id, message.from_user.username)
 
     if _is_soundcloud_album_url(query):
-        await _handle_link(message, cache, soundcloud_album_service, query)
+        await _handle_link(message, cache, captions, soundcloud_album_service, query)
         return
 
-    await _handle_text_search(message, cache, album_service, soundcloud_album_service, query)
+    await _handle_text_search(
+        message, cache, captions, album_service, soundcloud_album_service, query
+    )
 
 
 async def _present_albums(
-    message: Message, cache: CacheService, albums: list[AlbumInfo]
+    message: Message, cache: CacheService, captions: CaptionRenderer, albums: list[AlbumInfo]
 ) -> None:
     token = secrets.token_hex(_TOKEN_BYTES)
     await cache.set_albums(token, [dataclasses.asdict(album) for album in albums])
     await message.answer_photo(
         photo=albums[0].cover,
-        caption=_album_caption(albums[0], 0, len(albums)),
+        caption=captions.album(albums[0], 0, len(albums)),
         reply_markup=_picker_keyboard(token, 0, len(albums)),
     )
 
 
 async def _handle_link(
-    message: Message, cache: CacheService, service: SoundCloudAlbumService, url: str
+    message: Message,
+    cache: CacheService,
+    captions: CaptionRenderer,
+    service: SoundCloudAlbumService,
+    url: str,
 ) -> None:
     try:
         album = await service.fetch_album(url)
@@ -139,23 +136,40 @@ async def _handle_link(
     if not album or not album.cover:
         await message.answer(f"{ERROR} couldn't read that SoundCloud album")
         return
-    await _present_albums(message, cache, [album])
+    await _present_albums(message, cache, captions, [album])
 
 
 async def _handle_text_search(
     message: Message,
     cache: CacheService,
+    captions: CaptionRenderer,
     spotify: AlbumService | None,
     soundcloud: SoundCloudAlbumService,
     query: str,
 ) -> None:
     status = await message.answer(f"{PROCESSING} searching albums…")
-    albums = await _search_albums(spotify, soundcloud, query)
+    albums = await _resolve_album_search(cache, spotify, soundcloud, query)
     if not albums:
         await status.edit_text(f"{ERROR} nothing found")
         return
-    await _present_albums(message, cache, albums)
+    await _present_albums(message, cache, captions, albums)
     await status.delete()
+
+
+async def _resolve_album_search(
+    cache: CacheService,
+    spotify: AlbumService | None,
+    soundcloud: SoundCloudAlbumService,
+    query: str,
+) -> list[AlbumInfo]:
+    cached = await cache.get_album_search(query)
+    if cached is not None:
+        return [AlbumInfo(**item) for item in cached]
+
+    albums = await _search_albums(spotify, soundcloud, query)
+    if albums:
+        await cache.set_album_search(query, [dataclasses.asdict(album) for album in albums])
+    return albums
 
 
 async def _search_albums(
@@ -199,6 +213,7 @@ async def handle_album_noop(callback: CallbackQuery) -> None:
 async def handle_album_page(
     callback: CallbackQuery,
     cache: FromDishka[CacheService],
+    captions: FromDishka[CaptionRenderer],
 ) -> None:
     _, _, token, raw_index = callback.data.split(":")
     albums = await _load_albums(cache, token)
@@ -208,17 +223,15 @@ async def handle_album_page(
 
     index = int(raw_index) % len(albums)
     album = albums[index]
-    try:
+    with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_media(
             media=InputMediaPhoto(
                 media=album.cover,
-                caption=_album_caption(album, index, len(albums)),
+                caption=captions.album(album, index, len(albums)),
                 parse_mode="HTML",
             ),
             reply_markup=_picker_keyboard(token, index, len(albums)),
         )
-    except TelegramBadRequest:
-        pass
     await callback.answer()
 
 
@@ -243,10 +256,8 @@ async def handle_album_download(
     index = int(raw_index) % len(albums)
     await callback.answer("queued…")
 
-    try:
+    with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_reply_markup(reply_markup=None)
-    except TelegramBadRequest:
-        pass
 
     await arq.enqueue_job(
         "download_album",

@@ -1,5 +1,8 @@
 from collections.abc import AsyncGenerator, AsyncIterator
 
+from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from dishka import Provider, Scope, make_async_container, provide
@@ -12,7 +15,16 @@ from bot.repositories.user import UserRepository
 from bot.services.album import AlbumService
 from bot.services.cache import CacheService
 from bot.services.deezer import DeezerDownloader
-from bot.services.downloader import DownloaderService
+from bot.services.delivery import (
+    AlbumDeliveryService,
+    AudioMessenger,
+    AudioUploader,
+    CaptionRenderer,
+    TrackDeliveryService,
+)
+from bot.services.download import DownloaderService
+from bot.services.download.deezer_source import DeezerDownloadSource
+from bot.services.download.ytdlp_source import YtDlpDownloadSource
 from bot.services.search import SearchService, YtDlpProvider
 from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.stats import StatsService
@@ -28,6 +40,15 @@ class AppProvider(Provider):
         return settings
 
     @provide
+    async def get_bot(self, s: Settings) -> AsyncIterator[Bot]:
+        bot = Bot(
+            token=s.BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        yield bot
+        await bot.session.close()
+
+    @provide
     def get_cache(self, s: Settings) -> CacheService:
         return CacheService(s.REDIS_URL)
 
@@ -39,7 +60,8 @@ class AppProvider(Provider):
 
     @provide
     def get_downloader(self, deezer: DeezerDownloader | None) -> DownloaderService:
-        return DownloaderService(deezer)
+        deezer_source = DeezerDownloadSource(deezer) if deezer is not None else None
+        return DownloaderService(YtDlpDownloadSource(), deezer_source)
 
     @provide
     def get_album_service(self, s: Settings) -> AlbumService | None:
@@ -60,6 +82,50 @@ class AppProvider(Provider):
         pool = await create_pool(RedisSettings.from_dsn(s.REDIS_URL))
         yield pool
         await pool.aclose()
+
+    @provide
+    def get_captions(self) -> CaptionRenderer:
+        return CaptionRenderer()
+
+    @provide
+    def get_messenger(self, bot: Bot, captions: CaptionRenderer) -> AudioMessenger:
+        return AudioMessenger(bot, captions)
+
+    @provide
+    def get_uploader(self, bot: Bot, cache: CacheService) -> AudioUploader:
+        return AudioUploader(bot, cache)
+
+    @provide
+    def get_track_delivery(
+        self,
+        cache: CacheService,
+        downloader: DownloaderService,
+        uploader: AudioUploader,
+        messenger: AudioMessenger,
+        captions: CaptionRenderer,
+        session_factory: async_sessionmaker[AsyncSession],
+        s: Settings,
+    ) -> TrackDeliveryService:
+        return TrackDeliveryService(
+            cache, downloader, uploader, messenger, captions, session_factory, s
+        )
+
+    @provide
+    def get_album_delivery(
+        self,
+        bot: Bot,
+        spotify: AlbumService | None,
+        soundcloud: SoundCloudAlbumService,
+        downloader: DownloaderService,
+        uploader: AudioUploader,
+        cache: CacheService,
+        captions: CaptionRenderer,
+        session_factory: async_sessionmaker[AsyncSession],
+        s: Settings,
+    ) -> AlbumDeliveryService:
+        return AlbumDeliveryService(
+            bot, spotify, soundcloud, downloader, uploader, cache, captions, session_factory, s
+        )
 
     @provide
     def get_search_service(self, cache: CacheService, s: Settings) -> SearchService:

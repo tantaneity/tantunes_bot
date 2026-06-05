@@ -1,13 +1,13 @@
 import asyncio
 import dataclasses
 import logging
-import re
 from abc import ABC, abstractmethod
 
 import yt_dlp
 
 from bot.models.track import TrackInfo
 from bot.services.cache import CacheService
+from bot.utils.text import normalize, parse_artist_title
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +32,9 @@ def _is_sc_track_url(url: str) -> bool:
     return slug not in _SC_NON_TRACK_SLUGS
 
 
-def _normalize(s: str) -> str:
-    return re.sub(r"[^\w\s]", "", s.lower()).strip()
-
-
 def _relevance(track: TrackInfo, query_words: frozenset[str]) -> int:
-    text = _normalize(f"{track.performer} {track.title}")
+    text = normalize(f"{track.performer} {track.title}")
     return sum(1 for w in query_words if w in text)
-
-
-def _parse_title(raw_title: str, uploader: str) -> tuple[str, str]:
-    if " - " in raw_title:
-        parts = raw_title.split(" - ", 1)
-        return parts[0].strip(), parts[1].strip()
-    return uploader or "Unknown", raw_title
 
 
 class SearchProvider(ABC):
@@ -118,7 +107,7 @@ class YtDlpProvider(SearchProvider):
             if track_field:
                 performer, title = artist_field, track_field
             else:
-                performer, title = _parse_title(raw_title, artist_field)
+                performer, title = parse_artist_title(raw_title, artist_field)
 
             results.append(
                 TrackInfo(
@@ -151,7 +140,7 @@ class SearchService:
         raw = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: list[TrackInfo] = []
-        for provider, result in zip(self._providers, raw):
+        for provider, result in zip(self._providers, raw, strict=False):
             if isinstance(result, Exception):
                 logger.warning("Search failed for source=%s: %s", provider.source, result)
                 continue
@@ -164,7 +153,7 @@ class SearchService:
         seen: dict[tuple[str, str], int] = {}
         deduped: list[TrackInfo] = []
         for track in merged:
-            key = (_normalize(track.performer), _normalize(track.title))
+            key = (normalize(track.performer), normalize(track.title))
             is_search_url = track.url.startswith(("ytsearch", "scsearch"))
             if key not in seen:
                 seen[key] = len(deduped)
@@ -190,7 +179,7 @@ class SearchService:
 
             if resolve_tasks:
                 sc_results = await asyncio.gather(*resolve_tasks, return_exceptions=True)
-                for i, sc in zip(resolve_indices, sc_results):
+                for i, sc in zip(resolve_indices, sc_results, strict=False):
                     if isinstance(sc, Exception) or not sc:
                         continue
                     candidate = sc[0]
@@ -198,7 +187,7 @@ class SearchService:
                         deduped[i] = dataclasses.replace(deduped[i], url=candidate.url)
                         logger.debug("Resolved spotify:%s → SC %s", deduped[i].video_id, candidate.url)
 
-        query_words = frozenset(_normalize(query).split())
+        query_words = frozenset(normalize(query).split())
         deduped.sort(key=lambda t: (-_relevance(t, query_words), _SOURCE_PRIORITY.get(t.source, 99)))
 
         results = deduped[:max_results]
