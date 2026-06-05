@@ -6,12 +6,13 @@ from copy import deepcopy
 from pathlib import Path
 
 import imageio_ffmpeg
-from deezer import Deezer, TrackFormats
 from deemix import generateDownloadObject
 from deemix.downloader import Downloader
 from deemix.settings import DEFAULTS
+from deezer import Deezer, TrackFormats
 
 _FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+_PREVIEW_DURATION_SECONDS = 60
 
 _DEEMIX_SETTINGS = {
     **DEFAULTS,
@@ -94,7 +95,7 @@ class DeezerDownloader:
         output_dir: str,
         isrc: str = "",
         expected_duration: int = 0,
-        on_progress: "Callable[[int], None] | None" = None,
+        on_progress: Callable[[int], None] | None = None,
     ) -> str:
         if on_progress:
             on_progress(5)
@@ -131,9 +132,9 @@ class DeezerDownloader:
         if audio_file is None:
             raise FileNotFoundError(f"No audio file after Deezer download for {artist} — {title}")
 
-        if expected_duration > 60:
+        if expected_duration > _PREVIEW_DURATION_SECONDS:
             actual = self._get_audio_duration(audio_file)
-            if 0 < actual < 60:
+            if 0 < actual < _PREVIEW_DURATION_SECONDS:
                 raise ValueError(
                     f"Deezer returned 30s preview ({actual:.0f}s) instead of "
                     f"full track ({expected_duration}s) for {artist} — {title}"

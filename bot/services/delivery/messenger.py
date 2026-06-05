@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 
@@ -21,14 +22,12 @@ class AudioMessenger:
         self._captions = captions
 
     async def edit_inline_audio(self, inline_message_id: str, item: AudioMessage) -> None:
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_media(
                 media=self._input_media(item),
                 inline_message_id=inline_message_id,
                 reply_markup=self._track_keyboard(item),
             )
-        except TelegramBadRequest:
-            pass
 
     async def send_chat_audio(self, chat_id: int, item: AudioMessage) -> None:
         await self._bot.send_audio(
@@ -45,13 +44,11 @@ class AudioMessenger:
     async def edit_progress(
         self, inline_message_id: str, source: str, video_id: str, percent: int
     ) -> None:
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_reply_markup(
                 inline_message_id=inline_message_id,
                 reply_markup=self._progress_keyboard(source, video_id, percent),
             )
-        except TelegramBadRequest:
-            pass
 
     def progress_callback(
         self, inline_message_id: str, source: str, video_id: str
@@ -74,7 +71,7 @@ class AudioMessenger:
         message_id: int | None = None,
         inline_message_id: str | None = None,
     ) -> None:
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             if message_id is not None:
                 await self._bot.edit_message_text(
                     text, chat_id=chat_id, message_id=message_id, parse_mode="HTML"
@@ -83,14 +80,10 @@ class AudioMessenger:
                 await self._bot.edit_message_text(
                     text, inline_message_id=inline_message_id, parse_mode="HTML"
                 )
-        except TelegramBadRequest:
-            pass
 
     async def delete(self, chat_id: int, message_id: int) -> None:
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await self._bot.delete_message(chat_id, message_id)
-        except TelegramBadRequest:
-            pass
 
     def _track_keyboard(self, item: AudioMessage) -> InlineKeyboardMarkup | None:
         return track_keyboard(self._captions.track_url(item.source, item.video_id, item.url))

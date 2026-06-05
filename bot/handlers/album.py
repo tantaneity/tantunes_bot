@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import secrets
@@ -206,7 +207,7 @@ async def handle_album_page(
 
     index = int(raw_index) % len(albums)
     album = albums[index]
-    try:
+    with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_media(
             media=InputMediaPhoto(
                 media=album.cover,
@@ -215,8 +216,6 @@ async def handle_album_page(
             ),
             reply_markup=_picker_keyboard(token, index, len(albums)),
         )
-    except TelegramBadRequest:
-        pass
     await callback.answer()
 
 
@@ -241,10 +240,8 @@ async def handle_album_download(
     index = int(raw_index) % len(albums)
     await callback.answer("queued…")
 
-    try:
+    with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_reply_markup(reply_markup=None)
-    except TelegramBadRequest:
-        pass
 
     await arq.enqueue_job(
         "download_album",

@@ -140,7 +140,7 @@ class SearchService:
         raw = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: list[TrackInfo] = []
-        for provider, result in zip(self._providers, raw):
+        for provider, result in zip(self._providers, raw, strict=False):
             if isinstance(result, Exception):
                 logger.warning("Search failed for source=%s: %s", provider.source, result)
                 continue
@@ -179,7 +179,7 @@ class SearchService:
 
             if resolve_tasks:
                 sc_results = await asyncio.gather(*resolve_tasks, return_exceptions=True)
-                for i, sc in zip(resolve_indices, sc_results):
+                for i, sc in zip(resolve_indices, sc_results, strict=False):
                     if isinstance(sc, Exception) or not sc:
                         continue
                     candidate = sc[0]

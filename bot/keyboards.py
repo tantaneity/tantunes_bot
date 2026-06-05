@@ -1,4 +1,5 @@
 from urllib.parse import urlsplit
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 

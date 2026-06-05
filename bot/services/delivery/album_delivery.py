@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import shutil
 import tempfile
@@ -195,15 +196,13 @@ class AlbumDeliveryService:
             await self._bot.send_media_group(chat_id, media=items[start : start + _MEDIA_GROUP_SIZE])
 
     async def _report(self, request: AlbumDeliveryRequest, caption: str) -> None:
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_caption(
                 chat_id=request.chat_id,
                 message_id=request.picker_message_id,
                 caption=caption,
                 parse_mode="HTML",
             )
-        except TelegramBadRequest:
-            pass
 
     async def _record_download(self, user_id: int, album: AlbumInfo) -> None:
         async with self._session_factory() as session:

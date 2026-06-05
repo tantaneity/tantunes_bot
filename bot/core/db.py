@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from bot.config import settings
 from bot.models.base import Base
-from bot.models.entities import Download, Search, User  
+from bot.models.entities import Download, Search, User
 
 _engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.DB_PATH}",
