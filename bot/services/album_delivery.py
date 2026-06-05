@@ -8,7 +8,7 @@ from html import escape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InputMediaAudio
+from aiogram.types import FSInputFile, InputMediaAudio
 
 from bot.emoji import ERROR, MUSIC
 from bot.models.album import AlbumInfo
@@ -74,10 +74,7 @@ async def _download_track(
             use_deezer=track.source == "spotify",
         )
 
-        with open(mp3_path, "rb") as f:
-            audio_data = BufferedInputFile(
-                f.read(), filename=f"{track.performer} - {track.title}.mp3"
-            )
+        audio_data = FSInputFile(mp3_path, filename=f"{track.performer} - {track.title}.mp3")
 
         uploaded = await bot.send_audio(
             upload_channel_id,

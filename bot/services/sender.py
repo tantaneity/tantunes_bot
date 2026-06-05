@@ -8,7 +8,7 @@ from html import escape
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import (
-    BufferedInputFile,
+    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaAudio,
@@ -211,8 +211,7 @@ async def deliver_audio(
             use_deezer=source == "spotify",
         )
 
-        with open(mp3_path, "rb") as f:
-            audio_data = BufferedInputFile(f.read(), filename=f"{performer} - {title}.mp3")
+        audio_data = FSInputFile(mp3_path, filename=f"{performer} - {title}.mp3")
 
         upload_target = upload_channel_id or chat_id
         upload_kwargs = {"disable_notification": True} if upload_channel_id else {}
