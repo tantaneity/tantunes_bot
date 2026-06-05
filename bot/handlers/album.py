@@ -148,12 +148,28 @@ async def _handle_text_search(
     query: str,
 ) -> None:
     status = await message.answer(f"{PROCESSING} searching albums…")
-    albums = await _search_albums(spotify, soundcloud, query)
+    albums = await _resolve_album_search(cache, spotify, soundcloud, query)
     if not albums:
         await status.edit_text(f"{ERROR} nothing found")
         return
     await _present_albums(message, cache, captions, albums)
     await status.delete()
+
+
+async def _resolve_album_search(
+    cache: CacheService,
+    spotify: AlbumService | None,
+    soundcloud: SoundCloudAlbumService,
+    query: str,
+) -> list[AlbumInfo]:
+    cached = await cache.get_album_search(query)
+    if cached is not None:
+        return [AlbumInfo(**item) for item in cached]
+
+    albums = await _search_albums(spotify, soundcloud, query)
+    if albums:
+        await cache.set_album_search(query, [dataclasses.asdict(album) for album in albums])
+    return albums
 
 
 async def _search_albums(

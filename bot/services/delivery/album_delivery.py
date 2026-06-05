@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import shutil
 import tempfile
@@ -66,6 +67,13 @@ class AlbumDeliveryService:
             return
         album = albums[request.index]
 
+        cached = await self._cache.get_album_audio(album.source, album.album_id)
+        if cached:
+            items = [AudioMessage(**entry) for entry in cached]
+            await self._finalize(request, album, items, len(items))
+            await self._record_download(request.user_id, album)
+            return
+
         try:
             tracks = await self._fetch_tracks(album)
         except Exception:
@@ -77,9 +85,20 @@ class AlbumDeliveryService:
             await self._report(request, self._captions.album_error("album has no tracks"))
             return
 
-        delivered = await self._deliver_tracks(request, album, tracks)
-        if delivered:
-            await self._record_download(request.user_id, album)
+        items = await self._download_all(request, album, tracks)
+        if not items:
+            await self._report(
+                request, self._captions.album_error("couldn't download any track from this album")
+            )
+            return
+
+        if len(items) == len(tracks):
+            await self._cache.set_album_audio(
+                album.source, album.album_id, [dataclasses.asdict(item) for item in items]
+            )
+
+        await self._finalize(request, album, items, len(tracks))
+        await self._record_download(request.user_id, album)
 
     async def _fetch_tracks(self, album: AlbumInfo) -> list[TrackInfo]:
         if album.source == "soundcloud":
@@ -88,11 +107,11 @@ class AlbumDeliveryService:
             raise RuntimeError("Spotify album service unavailable")
         return await self._spotify.get_tracks(album.album_id)
 
-    async def _deliver_tracks(
+    async def _download_all(
         self, request: AlbumDeliveryRequest, album: AlbumInfo, tracks: list[TrackInfo]
-    ) -> int:
+    ) -> list[AudioMessage]:
         total = len(tracks)
-        file_ids: list[str | None] = [None] * total
+        results: list[AudioMessage | None] = [None] * total
         done = 0
         last_edit = 0.0
         lock = asyncio.Lock()
@@ -112,22 +131,30 @@ class AlbumDeliveryService:
                 file_id = await self._resolve_track(track)
             async with lock:
                 done += 1
-                file_ids[index] = file_id
+                if file_id:
+                    results[index] = AudioMessage(
+                        source=track.source,
+                        video_id=track.video_id,
+                        performer=track.performer,
+                        title=track.title,
+                        file_id=file_id,
+                    )
             await edit_progress()
 
         await edit_progress(force=True)
         await asyncio.gather(*(worker(index, track) for index, track in enumerate(tracks)))
 
-        ordered = [(tracks[index], file_id) for index, file_id in enumerate(file_ids) if file_id]
-        if not ordered:
-            await self._report(
-                request, self._captions.album_error("couldn't download any track from this album")
-            )
-            return 0
+        return [item for item in results if item is not None]
 
-        await self._send_audios(request.chat_id, album, ordered)
-        await self._report(request, self._captions.album_done(album, len(ordered), total))
-        return len(ordered)
+    async def _finalize(
+        self,
+        request: AlbumDeliveryRequest,
+        album: AlbumInfo,
+        items: list[AudioMessage],
+        total: int,
+    ) -> None:
+        await self._send_audios(request.chat_id, album, items)
+        await self._report(request, self._captions.album_done(album, len(items), total))
 
     async def _resolve_track(self, track: TrackInfo) -> str | None:
         cached = await self._cache.get_file_id(track.source, track.video_id)
@@ -165,23 +192,23 @@ class AlbumDeliveryService:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     async def _send_audios(
-        self, chat_id: int, album: AlbumInfo, ordered: list[tuple[TrackInfo, str]]
+        self, chat_id: int, album: AlbumInfo, items: list[AudioMessage]
     ) -> None:
-        items: list[InputMediaAudio] = []
-        for index, (track, file_id) in enumerate(ordered):
+        media: list[InputMediaAudio] = []
+        for index, item in enumerate(items):
             caption = self._captions.album_header(album) if index == 0 else None
-            items.append(
+            media.append(
                 InputMediaAudio(
-                    media=file_id,
-                    title=track.title,
-                    performer=track.performer,
+                    media=item.file_id,
+                    title=item.title,
+                    performer=item.performer,
                     caption=caption,
                     parse_mode="HTML" if caption else None,
                 )
             )
 
-        if len(items) == 1:
-            only = items[0]
+        if len(media) == 1:
+            only = media[0]
             await self._bot.send_audio(
                 chat_id,
                 audio=only.media,
@@ -192,8 +219,8 @@ class AlbumDeliveryService:
             )
             return
 
-        for start in range(0, len(items), _MEDIA_GROUP_SIZE):
-            await self._bot.send_media_group(chat_id, media=items[start : start + _MEDIA_GROUP_SIZE])
+        for start in range(0, len(media), _MEDIA_GROUP_SIZE):
+            await self._bot.send_media_group(chat_id, media=media[start : start + _MEDIA_GROUP_SIZE])
 
     async def _report(self, request: AlbumDeliveryRequest, caption: str) -> None:
         with contextlib.suppress(TelegramBadRequest):
