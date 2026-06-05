@@ -15,6 +15,13 @@ from bot.repositories.user import UserRepository
 from bot.services.album import AlbumService
 from bot.services.cache import CacheService
 from bot.services.deezer import DeezerDownloader
+from bot.services.delivery import (
+    AlbumDeliveryService,
+    AudioMessenger,
+    AudioUploader,
+    CaptionRenderer,
+    TrackDeliveryService,
+)
 from bot.services.download import DownloaderService
 from bot.services.download.deezer_source import DeezerDownloadSource
 from bot.services.download.ytdlp_source import YtDlpDownloadSource
@@ -75,6 +82,50 @@ class AppProvider(Provider):
         pool = await create_pool(RedisSettings.from_dsn(s.REDIS_URL))
         yield pool
         await pool.aclose()
+
+    @provide
+    def get_captions(self) -> CaptionRenderer:
+        return CaptionRenderer()
+
+    @provide
+    def get_messenger(self, bot: Bot, captions: CaptionRenderer) -> AudioMessenger:
+        return AudioMessenger(bot, captions)
+
+    @provide
+    def get_uploader(self, bot: Bot, cache: CacheService) -> AudioUploader:
+        return AudioUploader(bot, cache)
+
+    @provide
+    def get_track_delivery(
+        self,
+        cache: CacheService,
+        downloader: DownloaderService,
+        uploader: AudioUploader,
+        messenger: AudioMessenger,
+        captions: CaptionRenderer,
+        session_factory: async_sessionmaker[AsyncSession],
+        s: Settings,
+    ) -> TrackDeliveryService:
+        return TrackDeliveryService(
+            cache, downloader, uploader, messenger, captions, session_factory, s
+        )
+
+    @provide
+    def get_album_delivery(
+        self,
+        bot: Bot,
+        spotify: AlbumService | None,
+        soundcloud: SoundCloudAlbumService,
+        downloader: DownloaderService,
+        uploader: AudioUploader,
+        cache: CacheService,
+        captions: CaptionRenderer,
+        session_factory: async_sessionmaker[AsyncSession],
+        s: Settings,
+    ) -> AlbumDeliveryService:
+        return AlbumDeliveryService(
+            bot, spotify, soundcloud, downloader, uploader, cache, captions, session_factory, s
+        )
 
     @provide
     def get_search_service(self, cache: CacheService, s: Settings) -> SearchService:
