@@ -6,7 +6,7 @@ from rapidfuzz import fuzz
 
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
-from bot.services.search import _parse_title
+from bot.utils.text import parse_artist_title
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def _entry_artist_title(entry: dict) -> tuple[str, str]:
     artist_field = entry.get("artist") or entry.get("uploader") or "Unknown"
     if track_field:
         return artist_field, track_field
-    return _parse_title(entry.get("title") or "Unknown", artist_field)
+    return parse_artist_title(entry.get("title") or "Unknown", artist_field)
 
 
 class SoundCloudAlbumService:
