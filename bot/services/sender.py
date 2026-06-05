@@ -24,7 +24,6 @@ from bot.emoji import (
     PROCESSING,
     SOURCE_EMOJI_FALLBACKS,
     SOURCE_EMOJI_IDS,
-    SOURCE_LABEL,
 )
 from bot.keyboards import track_keyboard
 from bot.repositories.stats import DownloadRepository, SearchRepository
