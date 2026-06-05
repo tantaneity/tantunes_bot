@@ -29,7 +29,7 @@ from bot.keyboards import track_keyboard
 from bot.repositories.stats import DownloadRepository, SearchRepository
 from bot.repositories.user import UserRepository
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
+from bot.services.download import DownloaderService, DownloadRequest
 from bot.services.tracker import TrackingService
 
 logger = logging.getLogger(__name__)
@@ -197,18 +197,19 @@ async def deliver_audio(
             loop = asyncio.get_running_loop()
             on_progress = _make_progress_callback(bot, loop, inline_message_id, source, video_id)
 
-        expected_duration = int(meta.get("duration") or 0)
-        mp3_path = await downloader.download(
-            url, tmp_dir,
-            on_progress=on_progress,
-            expected_duration=expected_duration,
-            expected_title=title,
-            expected_artist=performer,
+        request = DownloadRequest(
+            url=url,
+            output_dir=tmp_dir,
             title=title,
             artist=performer,
             isrc=meta.get("isrc", ""),
+            expected_duration=int(meta.get("duration") or 0),
+            expected_title=title,
+            expected_artist=performer,
             use_deezer=source == "spotify",
+            on_progress=on_progress,
         )
+        mp3_path = await downloader.download(request)
 
         audio_data = FSInputFile(mp3_path, filename=f"{performer} - {title}.mp3")
 

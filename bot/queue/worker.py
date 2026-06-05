@@ -13,7 +13,7 @@ from bot.core.db import init_db
 from bot.queue.jobs import download_album, download_track
 from bot.services.album import AlbumService
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
+from bot.services.download import DownloaderService
 from bot.services.soundcloud_album import SoundCloudAlbumService
 
 logging.basicConfig(

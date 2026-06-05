@@ -12,7 +12,9 @@ from bot.repositories.user import UserRepository
 from bot.services.album import AlbumService
 from bot.services.cache import CacheService
 from bot.services.deezer import DeezerDownloader
-from bot.services.downloader import DownloaderService
+from bot.services.download import DownloaderService
+from bot.services.download.deezer_source import DeezerDownloadSource
+from bot.services.download.ytdlp_source import YtDlpDownloadSource
 from bot.services.search import SearchService, YtDlpProvider
 from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.stats import StatsService
@@ -39,7 +41,8 @@ class AppProvider(Provider):
 
     @provide
     def get_downloader(self, deezer: DeezerDownloader | None) -> DownloaderService:
-        return DownloaderService(deezer)
+        deezer_source = DeezerDownloadSource(deezer) if deezer is not None else None
+        return DownloaderService(YtDlpDownloadSource(), deezer_source)
 
     @provide
     def get_album_service(self, s: Settings) -> AlbumService | None:

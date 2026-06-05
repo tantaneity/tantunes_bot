@@ -14,7 +14,7 @@ from bot.emoji import ERROR, MUSIC
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
 from bot.services.cache import CacheService
-from bot.services.downloader import DownloaderService
+from bot.services.download import DownloaderService, DownloadRequest
 from bot.services.sender import thumbnail_file
 
 logger = logging.getLogger(__name__)
@@ -62,17 +62,18 @@ async def _download_track(
 
     tmp_dir = tempfile.mkdtemp(prefix="tantunes_album_")
     try:
-        mp3_path = await downloader.download(
-            track.url,
-            tmp_dir,
-            expected_duration=track.duration,
-            expected_title=track.title,
-            expected_artist=track.performer,
+        request = DownloadRequest(
+            url=track.url,
+            output_dir=tmp_dir,
             title=track.title,
             artist=track.performer,
             isrc=track.isrc,
+            expected_duration=track.duration,
+            expected_title=track.title,
+            expected_artist=track.performer,
             use_deezer=track.source == "spotify",
         )
+        mp3_path = await downloader.download(request)
 
         audio_data = FSInputFile(mp3_path, filename=f"{track.performer} - {track.title}.mp3")
 
