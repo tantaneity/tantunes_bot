@@ -18,6 +18,9 @@ _SC_NON_TRACK_SLUGS = frozenset(
     ("sets", "stream", "likes", "reposts", "tracks", "albums", "following", "followers")
 )
 
+_SC_RESOLVE_CANDIDATES = 5
+_DURATION_TOLERANCE = 0.15
+
 
 def _is_sc_track_url(url: str) -> bool:
     if not url:
@@ -30,6 +33,26 @@ def _is_sc_track_url(url: str) -> bool:
         return False
     slug = parts[1]
     return slug not in _SC_NON_TRACK_SLUGS
+
+
+def _matches_duration(candidate_duration: int, expected_duration: int) -> bool:
+    if candidate_duration <= 0 or expected_duration <= 0:
+        return False
+    return abs(candidate_duration - expected_duration) / expected_duration <= _DURATION_TOLERANCE
+
+
+def _pick_sc_candidate(
+    candidates: list[TrackInfo], expected_duration: int
+) -> TrackInfo | None:
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if _is_sc_track_url(candidate.url)
+            and _matches_duration(candidate.duration, expected_duration)
+        ),
+        None,
+    )
 
 
 def _relevance(track: TrackInfo, query_words: frozenset[str]) -> int:
@@ -173,7 +196,10 @@ class SearchService:
             for i, track in enumerate(deduped):
                 if track.source == "spotify" and track.url.startswith(("ytmsearch", "ytsearch")):
                     resolve_tasks.append(
-                        sc_provider.search(f"{track.performer} {track.title}", max_results=1)
+                        sc_provider.search(
+                            f"{track.performer} {track.title}",
+                            max_results=_SC_RESOLVE_CANDIDATES,
+                        )
                     )
                     resolve_indices.append(i)
 
@@ -182,10 +208,17 @@ class SearchService:
                 for i, sc in zip(resolve_indices, sc_results, strict=False):
                     if isinstance(sc, Exception) or not sc:
                         continue
-                    candidate = sc[0]
-                    if _is_sc_track_url(candidate.url):
-                        deduped[i] = dataclasses.replace(deduped[i], url=candidate.url)
-                        logger.debug("Resolved spotify:%s → SC %s", deduped[i].video_id, candidate.url)
+                    candidate = _pick_sc_candidate(sc, deduped[i].duration)
+                    if candidate is None:
+                        logger.debug(
+                            "No SC candidate matching %ss for spotify:%s, keeping %s",
+                            deduped[i].duration,
+                            deduped[i].video_id,
+                            deduped[i].url,
+                        )
+                        continue
+                    deduped[i] = dataclasses.replace(deduped[i], url=candidate.url)
+                    logger.debug("Resolved spotify:%s → SC %s", deduped[i].video_id, candidate.url)
 
         query_words = frozenset(normalize(query).split())
         deduped.sort(key=lambda t: (-_relevance(t, query_words), _SOURCE_PRIORITY.get(t.source, 99)))
