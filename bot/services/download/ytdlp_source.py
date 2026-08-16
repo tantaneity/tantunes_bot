@@ -9,9 +9,10 @@ from rapidfuzz import fuzz
 
 from bot.services.download.base import DownloadSource
 from bot.services.download.request import DownloadRequest
+from bot.services.search_urls import SEARCH_PREFIXES
 
 _FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-_SEARCH_PREFIX_RE = re.compile(r"^(ytmsearch|ytsearch|scsearch)\d*:")
+_SEARCH_PREFIX_RE = re.compile(rf"^({'|'.join(SEARCH_PREFIXES)})\d*:")
 _BROAD_RESULTS = 5
 _DURATION_TOLERANCE = 0.15
 _PREFERRED_QUALITY = "128"

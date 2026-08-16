@@ -3,6 +3,7 @@ import logging
 
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
+from bot.services.search_urls import build_youtube_search_url
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class AlbumService:
             tracks.append(
                 TrackInfo(
                     video_id=track_id,
-                    url=f"ytmsearch1:{artist} {title}",
+                    url=build_youtube_search_url(artist, title),
                     source="spotify",
                     title=title,
                     performer=artist,

@@ -6,6 +6,7 @@ from rapidfuzz import fuzz
 
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
+from bot.services.search_urls import SOUNDCLOUD_SEARCH_PREFIX
 from bot.utils.text import parse_artist_title
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,9 @@ class SoundCloudAlbumService:
         for term in terms:
             try:
                 with yt_dlp.YoutubeDL(_FLAT_OPTS) as ydl:
-                    info = ydl.extract_info(f"scsearch{_SCSEARCH_RESULTS}:{term}", download=False)
+                    info = ydl.extract_info(
+                        f"{SOUNDCLOUD_SEARCH_PREFIX}{_SCSEARCH_RESULTS}:{term}", download=False
+                    )
             except Exception:
                 logger.debug("scsearch failed for term %r", term, exc_info=True)
                 continue

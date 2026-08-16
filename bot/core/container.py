@@ -26,6 +26,7 @@ from bot.services.download import DownloaderService
 from bot.services.download.deezer_source import DeezerDownloadSource
 from bot.services.download.ytdlp_source import YtDlpDownloadSource
 from bot.services.search import SearchService, YtDlpProvider
+from bot.services.search_urls import SOUNDCLOUD_SEARCH_PREFIX, YOUTUBE_SEARCH_PREFIX
 from bot.services.soundcloud_album import SoundCloudAlbumService
 from bot.services.stats import StatsService
 from bot.services.tracker import TrackingService
@@ -134,8 +135,8 @@ class AppProvider(Provider):
             from bot.services.spotify import SpotifyProvider
             providers.append(SpotifyProvider(s.SPOTIFY_CLIENT_ID, s.SPOTIFY_CLIENT_SECRET))
         providers += [
-            YtDlpProvider("soundcloud", "scsearch"),
-            YtDlpProvider("youtube", "ytmsearch"),
+            YtDlpProvider("soundcloud", SOUNDCLOUD_SEARCH_PREFIX),
+            YtDlpProvider("youtube", YOUTUBE_SEARCH_PREFIX),
         ]
         return SearchService(providers, cache)
 

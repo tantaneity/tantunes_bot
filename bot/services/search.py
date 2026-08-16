@@ -7,6 +7,7 @@ import yt_dlp
 
 from bot.models.track import TrackInfo
 from bot.services.cache import CacheService
+from bot.services.search_urls import is_search_url
 from bot.utils.text import normalize, parse_artist_title
 
 logger = logging.getLogger(__name__)
@@ -177,16 +178,15 @@ class SearchService:
         deduped: list[TrackInfo] = []
         for track in merged:
             key = (normalize(track.performer), normalize(track.title))
-            is_search_url = track.url.startswith(("ytsearch", "scsearch"))
             if key not in seen:
                 seen[key] = len(deduped)
                 deduped.append(track)
-            elif is_search_url:
+            elif is_search_url(track.url):
                 pass
             else:
                 idx = seen[key]
                 existing = deduped[idx]
-                if existing.url.startswith(("ytsearch", "scsearch")):
+                if is_search_url(existing.url):
                     deduped[idx] = dataclasses.replace(existing, url=track.url)
 
         sc_provider = next((p for p in self._providers if p.source == "soundcloud"), None)
@@ -194,7 +194,7 @@ class SearchService:
             resolve_tasks = []
             resolve_indices = []
             for i, track in enumerate(deduped):
-                if track.source == "spotify" and track.url.startswith(("ytmsearch", "ytsearch")):
+                if track.source == "spotify" and is_search_url(track.url):
                     resolve_tasks.append(
                         sc_provider.search(
                             f"{track.performer} {track.title}",
