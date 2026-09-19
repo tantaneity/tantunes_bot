@@ -6,7 +6,7 @@ from rapidfuzz import fuzz
 
 from bot.models.album import AlbumInfo
 from bot.models.track import TrackInfo
-from bot.services.search_urls import SOUNDCLOUD_SEARCH_PREFIX
+from bot.services.search_urls import SOUNDCLOUD_SEARCH_PREFIX, build_youtube_search_url
 from bot.utils.text import parse_artist_title
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ _FULL_OPTS = {"quiet": True, "no_warnings": True}
 _SCSEARCH_RESULTS = 4
 _MAX_UPLOADERS = 3
 _MIN_TITLE_SCORE = 60
+_PREVIEW_FORMAT_SUFFIX = "_preview"
 
 
 def _best_thumbnail(item: dict) -> str:
@@ -48,6 +49,11 @@ def _candidate_terms(query: str, artist: str) -> list[str]:
         if term and term.lower() not in {existing.lower() for existing in ordered}:
             ordered.append(term)
     return ordered
+
+
+def _is_preview(entry: dict) -> bool:
+    format_ids = [f.get("format_id") or "" for f in entry.get("formats") or []]
+    return bool(format_ids) and all(f.endswith(_PREVIEW_FORMAT_SUFFIX) for f in format_ids)
 
 
 def _entry_artist_title(entry: dict) -> tuple[str, str]:
@@ -102,14 +108,15 @@ class SoundCloudAlbumService:
                 continue
 
             performer, title = _entry_artist_title(entry)
+            is_preview = _is_preview(entry)
             tracks.append(
                 TrackInfo(
                     video_id=str(entry["id"]),
-                    url=webpage_url,
+                    url=build_youtube_search_url(performer, title) if is_preview else webpage_url,
                     source="soundcloud",
                     title=title,
                     performer=performer,
-                    duration=int(entry.get("duration") or 0),
+                    duration=0 if is_preview else int(entry.get("duration") or 0),
                     thumbnail=_best_thumbnail(entry) or album_cover,
                 )
             )
