@@ -8,7 +8,7 @@ import time
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InputMediaAudio
+from aiogram.types import InputMediaAudio, InputMediaPhoto, InputRichMessage, InputRichMessageMedia
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -29,7 +29,8 @@ from bot.services.tracker import TrackingService
 logger = logging.getLogger(__name__)
 
 _MAX_CONCURRENCY = 3
-_MEDIA_GROUP_SIZE = 10
+_RICH_MEDIA_LIMIT = 50
+_COVER_MEDIA_ID = "cover"
 _PROGRESS_MIN_INTERVAL = 1.5
 
 
@@ -153,8 +154,10 @@ class AlbumDeliveryService:
         items: list[AudioMessage],
         total: int,
     ) -> None:
-        await self._send_audios(request.chat_id, album, items)
-        await self._report(request, self._captions.album_done(album, len(items), total))
+        header = self._captions.album_done(album, len(items), total)
+        await self._send_audios(request.chat_id, album, items, header)
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.delete_message(request.chat_id, request.picker_message_id)
 
     async def _resolve_track(self, track: TrackInfo) -> str | None:
         cached = await self._cache.get_file_id(track.source, track.video_id)
@@ -192,35 +195,51 @@ class AlbumDeliveryService:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     async def _send_audios(
-        self, chat_id: int, album: AlbumInfo, items: list[AudioMessage]
+        self, chat_id: int, album: AlbumInfo, items: list[AudioMessage], header: str
     ) -> None:
-        media: list[InputMediaAudio] = []
-        for index, item in enumerate(items):
-            caption = self._captions.album_header(album) if index == 0 else None
+        tracks_per_message = _RICH_MEDIA_LIMIT - 1
+        for start in range(0, len(items), tracks_per_message):
+            chunk = items[start : start + tracks_per_message]
+            if start > 0:
+                await self._send_rich(chat_id, self._rich_album(chunk, start))
+                continue
+            try:
+                await self._send_rich(chat_id, self._rich_album(chunk, start, header, album.cover))
+            except TelegramBadRequest:
+                logger.warning("Album cover rejected, sending without it: %s", album.cover, exc_info=True)
+                await self._send_rich(chat_id, self._rich_album(chunk, start, header))
+
+    async def _send_rich(self, chat_id: int, rich_message: InputRichMessage) -> None:
+        await self._bot.send_rich_message(chat_id, rich_message=rich_message)
+
+    def _rich_album(
+        self,
+        items: list[AudioMessage],
+        offset: int,
+        header: str | None = None,
+        cover: str | None = None,
+    ) -> InputRichMessage:
+        html_parts: list[str] = []
+        media: list[InputRichMessageMedia] = []
+        if cover:
+            html_parts.append(f'<img src="tg://photo?id={_COVER_MEDIA_ID}"/>')
+            media.append(InputRichMessageMedia(id=_COVER_MEDIA_ID, media=InputMediaPhoto(media=cover)))
+        if header:
+            header_html = header.replace("\n", "<br>")
+            html_parts.append(f"<p>{header_html}</p>")
+
+        for index, item in enumerate(items, start=offset):
+            media_id = f"t{index}"
+            html_parts.append(f'<audio src="tg://audio?id={media_id}"></audio>')
             media.append(
-                InputMediaAudio(
-                    media=item.file_id,
-                    title=item.title,
-                    performer=item.performer,
-                    caption=caption,
-                    parse_mode="HTML" if caption else None,
+                InputRichMessageMedia(
+                    id=media_id,
+                    media=InputMediaAudio(
+                        media=item.file_id, title=item.title, performer=item.performer
+                    ),
                 )
             )
-
-        if len(media) == 1:
-            only = media[0]
-            await self._bot.send_audio(
-                chat_id,
-                audio=only.media,
-                title=only.title,
-                performer=only.performer,
-                caption=only.caption,
-                parse_mode="HTML",
-            )
-            return
-
-        for start in range(0, len(media), _MEDIA_GROUP_SIZE):
-            await self._bot.send_media_group(chat_id, media=media[start : start + _MEDIA_GROUP_SIZE])
+        return InputRichMessage(html="".join(html_parts), media=media)
 
     async def _report(self, request: AlbumDeliveryRequest, caption: str) -> None:
         with contextlib.suppress(TelegramBadRequest):
